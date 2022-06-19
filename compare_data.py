@@ -11,7 +11,7 @@ def is_primitive(data):
     return isinstance(data, primitive)
 
 def compare_data(obj1, obj2, var_path):
-    print(var_path)
+    #print(var_path)
 
     if is_primitive(obj1):
         if not obj1 == obj2:
@@ -21,8 +21,8 @@ def compare_data(obj1, obj2, var_path):
         return
 
     # Get all callable (and non internal) variables
-    var_list1 = [var for var in vars(obj1) if not var.startswith("_")]
-    var_list2 = [var for var in vars(obj2) if not var.startswith("_")]
+    var_list1 = [var for var in dir(obj1) if not var.startswith("_") and not callable(getattr(obj1, var))]
+    var_list2 = [var for var in dir(obj2) if not var.startswith("_") and not callable(getattr(obj2, var))]
 
     # Make sure that both objects have the same set of keys
     if (var_list1 != var_list2):
@@ -47,6 +47,13 @@ def compare_data(obj1, obj2, var_path):
             for list_idx in range(len(data1)):
                 compare_data(data1[list_idx], data2[list_idx], var_path + "/" + name)
         else:
+            if "offset" in name:
+                # Don't compare offset variables.
+                # We are usually more interested to see if the actual parsed data matches
+                continue
+            if "time_stamp" == name:
+                # We don't either usually care if the write timestamp has changed either
+                continue
             # Dive deeper into the data structure
             compare_data(data1, data2, var_path + "/" + name)
 
@@ -86,21 +93,18 @@ def parse_and_compare_data(key, data1, data2):
         srf2 = Srf.from_bytes(data2)
         compare_data(srf1, srf2, "")
         return
-    print("Unknown format loaded")
-    raise ValueError
+    raise ValueError("Unknown format loaded")
 
 def compare_cpj_data(cpj_data1, cpj_data2):
     if cpj_data1.keys() != cpj_data2.keys():
-        print("The cpj files do not contain the same data chunk types!")
-        raise ValueError
+        raise ValueError("The cpj files do not contain the same data chunk types!")
 
     for key in cpj_data1:
         list1 = cpj_data1[key]
         list2 = cpj_data2[key]
 
         if len(list1) != len(list2):
-            print("The cpj files do not contain the same amount of chunks of type: " + str(key))
-            raise ValueError
+            raise ValueError("The cpj files do not contain the same amount of chunks of type: " + str(key))
         for i in range(len(list1)):
             print("Comparing " + str(key) + "_" + str(i))
             parse_and_compare_data(key, list1[i], list2[i])
