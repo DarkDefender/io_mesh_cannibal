@@ -1,0 +1,10 @@
+The files in format_declearations are KaiTai (https://kaitai.io/) files.
+To convert the file parsing structure in those files to python file, you need to compile them.
+
+You can do this by running them though the kaitai compiler:
+kaitai-struct-compiler -t python ./format_declearations/*
+
+It will output the python files to the folder you are running the command from
+
+The compare_data.py is sanity check helper that can parse and compare two python data structures to each other.
+It is used to see if two loaded cpj files or chunks are the same or if they differ.
