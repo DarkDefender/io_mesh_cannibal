@@ -146,9 +146,9 @@ def load_srf(srf_data, bl_object):
         uv1_idx = tri.uv_index[1]
         uv2_idx = tri.uv_index[2]
 
-        uv0 = (uvs[uv0_idx].u, uvs[uv0_idx].v)
-        uv1 = (uvs[uv1_idx].u, uvs[uv1_idx].v)
-        uv2 = (uvs[uv2_idx].u, uvs[uv2_idx].v)
+        uv0 = (uvs[uv0_idx].u, 1.0 - uvs[uv0_idx].v)
+        uv1 = (uvs[uv1_idx].u, 1.0 - uvs[uv1_idx].v)
+        uv2 = (uvs[uv2_idx].u, 1.0 - uvs[uv2_idx].v)
 
         bm.faces[i].loops[0][uv].uv = uv0
         bm.faces[i].loops[1][uv].uv = uv1
