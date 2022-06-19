@@ -1,0 +1,119 @@
+meta:
+  id: srf
+  file-extension: srf
+  title: Cannibal Surface Chunk
+  license: CC0-1.0
+  endian: le
+doc: |
+  The surface chunk of a model describes the surface properties of its
+  triangles for rendering and so forth.  It contains texture map coordinates,
+  texture names used by the triangles, various display-related flags, and other
+  supplemental information.  The number of triangles used should match the
+  number of triangles in the geometry chunk.  Surfaces can be stacked together
+  on top of a model, with the first surface acting as the primary "skin" of
+  the model and additional surfaces being used for decals (where non-decaled
+  triangles are flagged as inactive).
+doc-ref: Cannibal/CpjFmt.h
+seq:
+  - id: cpj_chunk_header
+    type: cpj_chunk_header
+  # Texture info
+  - id: num_textures
+    type: u4
+  - id: data_offset_textures
+    type: u4
+  # Tri info
+  - id: num_tris
+    type: u4
+  - id: data_offset_tris
+    type: u4
+  # UV info
+  - id: num_uv
+    type: u4
+  - id: data_offset_uv
+    type: u4
+  # Data block
+  - id: data_block
+    type: data_block
+    size-eos: true
+instances:
+  name:
+    pos: cpj_chunk_header.offset_name
+    type: strz
+    encoding: ASCII
+    if: cpj_chunk_header.offset_name != 0
+types:
+  cpj_chunk_header:
+    seq:
+      - id: magic
+        contents: 'SRFB'
+      - id: file_len # Byte length of file data AFTER this variable
+        type: u4
+      # Format version
+      - id: version
+        # TODO check/ensure that this is version 1
+        type: u4
+      # Chunk creation time stamp
+      - id: time_stamp
+        type: u4
+      - id: offset_name
+        type: u4
+  data_block:
+    instances:
+      textures:
+        type: texture
+        pos: _root.data_offset_textures
+        repeat: expr
+        repeat-expr: _root.num_textures
+      tris:
+        type: tri
+        pos: _root.data_offset_tris
+        repeat: expr
+        repeat-expr: _root.num_tris
+      uvs:
+        type: uv
+        pos: _root.data_offset_uv
+        repeat: expr
+        repeat-expr: _root.num_uv
+  texture:
+    seq:
+      - id: offset_name
+        type: u4
+      - id: offset_ref_name
+        type: u4
+    instances:
+      name:
+        pos: offset_name
+        type: strz
+        encoding: ASCII
+      ref_name:
+        pos: offset_ref_name
+        type: strz
+        encoding: ASCII
+        if: offset_ref_name != 0
+  tri:
+    seq:
+      - id: uv_index
+        type: u2
+        repeat: expr
+        repeat-expr: 3
+      - id: tex_index
+        type: u1
+      - id: reserved
+        type: u1
+      - id: flags
+        type: u4
+      - id: smooth_group
+        type: u1
+      - id: alpha_level
+        type: u1
+      - id: glaze_tex_index
+        type: u1
+      - id: glaze_func
+        type: u1
+  uv:
+    seq:
+      - id: u
+        type: f4
+      - id: v
+        type: f4

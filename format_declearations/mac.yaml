@@ -1,0 +1,100 @@
+meta:
+  id: mac
+  file-extension: mac
+  title: Cannibal Model Actor Configuration Chunk
+  license: CC0-1.0
+  endian: le
+doc: |
+  A model actor represents a combination of various resources and represents
+  the model as a whole.  The initial configuration of a model actor is done
+  with model actor configuration chunks.  These chunks contain a series of
+  text commands which are executed to change the properties of the actor.
+  The commands are used to set up a model's active resource chunks as well as
+  any other miscellaneous properties desired.
+
+  The chunk is broken up into "sections", each of which contains a simple
+  set of text commands that are executed in order.  The separation into sections
+  allows user extension information to be stored with the actor, within a
+  different section.  Any sections not explicitly requested by an editing
+  program should be preserved intact without alteration.
+
+  Model actor chunks can be stored in files independent of a full model project
+  (using the .MAC extension; see the Overview section above), for the purposes
+  of import and export convenience.  Although they can be stored outside a
+  full project, they are often meaningless in such a state.  Actor chunks are
+  most useful within the context of the full project with which they are
+  associated.
+doc-ref: Cannibal/CpjFmt.h
+seq:
+  - id: cpj_chunk_header
+    type: cpj_chunk_header
+  # Sections info
+  - id: num_sections
+    type: u4
+  - id: data_offset_sections
+    type: u4
+  # Commands info
+  - id: num_commands
+    type: u4
+  - id: data_offset_commands
+    type: u4
+  # Data block
+  - id: data_block
+    type: data_block
+    size-eos: true
+instances:
+  name:
+    pos: cpj_chunk_header.offset_name
+    type: strz
+    encoding: ASCII
+    if: cpj_chunk_header.offset_name != 0
+types:
+  cpj_chunk_header:
+    seq:
+      - id: magic
+        contents: 'MACB'
+      - id: file_len # Byte length of file data AFTER this variable
+        type: u4
+      # Format version
+      - id: version
+        # TODO check/ensure that this is version 1
+        type: u4
+      # Chunk creation time stamp
+      - id: time_stamp
+        type: u4
+      - id: offset_name
+        type: u4
+  data_block:
+    instances:
+      sections:
+        type: section
+        pos: _root.data_offset_sections
+        repeat: expr
+        repeat-expr: _root.num_sections
+      commands:
+        type: command
+        pos: _root.data_offset_commands
+        repeat: expr
+        repeat-expr: _root.num_commands
+  section:
+    seq:
+      - id: offset_name
+        type: u4
+      - id: num_commands
+        type: u4
+      - id: first_command
+        type: u4
+    instances:
+      name:
+        pos: offset_name
+        type: strz
+        encoding: ASCII
+  command:
+    seq:
+      - id: offset_command_str
+        type: u4
+    instances:
+      command_str:
+        pos: offset_command_str
+        type: strz
+        encoding: ASCII

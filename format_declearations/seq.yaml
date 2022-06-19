@@ -1,0 +1,206 @@
+meta:
+  id: seq
+  file-extension: seq
+  title: Cannibal Sequenced Animation Chunk
+  license: CC0-1.0
+  endian: le
+doc: |
+  A sequenced animation chunk contains an animation sequence in the form frame
+  structures which hold the state of the animation at a given point in the
+  sequence, containing skeletal and/or frame-based animation information.
+  The sequence can be executed in one of a model instance's runtime animation
+  "channels" at a given frames per second playback rate, and can be combined
+  with other channels to produce composite animations.  In addition, the
+  sequence may contain a series of "events" to fire at a particular point
+  during playback.
+
+  Since sequenced animation data is independent of any particular project,
+  all model resources needed are referred to by name, which can be bound to
+  actual model resources at runtime.  Each frame may refer to a single vertex
+  frame for frame-based animations, and/or a collection of bones for skeletal
+  animation.  Most skeletal animations will only use the rotate component, and
+  as such it is compressed into 16-bit euler angles.  The translate and scale
+  components are still supported, but are less common and left at full
+  precision.  All skeletal transformations are relative to the initial
+  structure transformation of the corresponding bone (which is then relative
+  to the bone's parent), to allow the animation to be used by multiple skeleton
+  structures.  During playback, the usage of any bones that are not described
+  by the sequence is determined by the implementation.  The bones may be left
+  in their default state, or ignored entirely, depending on context.
+doc-ref: Cannibal/CpjFmt.h
+seq:
+  - id: cpj_chunk_header
+    type: cpj_chunk_header
+  - id: play_rate
+    type: f4
+  # Frames info
+  - id: num_frames
+    type: u4
+  - id: data_offset_frames
+    type: u4
+  # Events info
+  - id: num_events
+    type: u4
+  - id: data_offset_events
+    type: u4
+  # Bone info
+  - id: num_bone_info
+    type: u4
+  - id: data_offset_bone_info
+    type: u4
+  # Bone translate info
+  - id: num_bone_translate
+    type: u4
+  - id: data_offset_bone_translate
+    type: u4
+  # Bone rotations info
+  - id: num_bone_rotate
+    type: u4
+  - id: data_offset_bone_rotate
+    type: u4
+  # Bone scalings info
+  - id: num_bone_scale
+    type: u4
+  - id: data_offset_bone_scale
+    type: u4
+  # Data block
+  - id: data_block
+    type: data_block
+    size-eos: true
+instances:
+  name:
+    pos: cpj_chunk_header.offset_name
+    type: strz
+    encoding: ASCII
+    if: cpj_chunk_header.offset_name != 0
+types:
+  cpj_chunk_header:
+    seq:
+      - id: magic
+        contents: 'SEQB'
+      - id: file_len # Byte length of file data AFTER this variable
+        type: u4
+      # Format version
+      - id: version
+        # TODO check/ensure that this is version 1
+        type: u4
+      # Chunk creation time stamp
+      - id: time_stamp
+        type: u4
+      - id: offset_name
+        type: u4
+  data_block:
+    instances:
+      frames:
+        type: frame
+        pos: _root.data_offset_frames
+        repeat: expr
+        repeat-expr: _root.num_frames
+      events:
+        type: event
+        pos: _root.data_offset_events
+        repeat: expr
+        repeat-expr: _root.num_events
+      bone_info:
+        type: bone_info
+        pos: _root.data_offset_bone_info
+        repeat: expr
+        repeat-expr: _root.num_bone_info
+      bone_translate:
+        type: bone_translate
+        pos: _root.data_offset_bone_translate
+        repeat: expr
+        repeat-expr: _root.num_bone_translate
+      bone_rotate:
+        type: bone_rotate
+        pos: _root.data_offset_bone_rotate
+        repeat: expr
+        repeat-expr: _root.num_bone_rotate
+      bone_scale:
+        type: bone_scale
+        pos: _root.data_offset_bone_scale
+        repeat: expr
+        repeat-expr: _root.num_bone_scale
+  frame:
+    seq:
+      - id: reserved
+        type: u1
+      - id: num_bone_translate
+        type: u1
+      - id: num_bone_rotate
+        type: u1
+      - id: num_bone_scale
+        type: u1
+      - id: first_bone_translate
+        type: u4
+      - id: first_bone_rotate
+        type: u4
+      - id: first_bone_scale
+        type: u4
+      - id: offset_vert_frame_name
+        type: s4
+    instances:
+      vert_frame_name:
+        pos: offset_vert_frame_name
+        type: strz
+        encoding: ASCII
+        if: offset_vert_frame_name != -1
+  event:
+    seq:
+      - id: event_type
+        type: u4
+      - id: time
+        type: f4
+      - id: offset_param_str
+        type: s4
+    instances:
+      vert_frame_name:
+        pos: offset_param_str
+        type: strz
+        encoding: ASCII
+        if: offset_param_str != -1
+  bone_info:
+    seq:
+      - id: offset_name
+        type: u4
+      - id: src_length
+        type: f4
+    instances:
+      name:
+        pos: offset_name
+        type: strz
+        encoding: ASCII
+  bone_translate:
+    seq:
+      - id: bone_index
+        type: u2
+      - id: reserved
+        type: u2
+      - id: translate
+        type: vec3f
+  bone_rotate:
+    seq:
+      - id: bone_index
+        type: u2
+      - id: roll
+        type: s2
+      - id: pitch
+        type: s2
+      - id: yaw
+        type: s2
+  bone_scale:
+    seq:
+      - id: bone_index
+        type: u2
+      - id: reserved
+        type: u2
+      - id: scale
+        type: vec3f
+  vec3f:
+    seq:
+      - id: x
+        type: f4
+      - id: y
+        type: f4
+      - id: z
+        type: f4

@@ -1,0 +1,150 @@
+meta:
+  id: skl
+  file-extension: skl
+  title: Cannibal Skeleton Chunk
+  license: CC0-1.0
+  endian: le
+doc: |
+  These chunks, if present, allow a model to be capable of skeletal-based
+  animation.  It contains a list of bones with their initial transforms and
+  hierarchical parents, as well as the vertex weights to use when applying a
+  matching geometry chunk.  All bone transforms are relative to their parents,
+  and the indices of the vertices should correspond to the vertices of the
+  geometry chunk being used.  These chunks also hold any mount points
+  associated with the skeleton.
+doc-ref: Cannibal/CpjFmt.h
+seq:
+  - id: cpj_chunk_header
+    type: cpj_chunk_header
+  # Bone info
+  - id: num_bones
+    type: u4
+  - id: data_offset_bones
+    type: u4
+  # Vert info
+  - id: num_verts
+    type: u4
+  - id: data_offset_verts
+    type: u4
+  # Weight info
+  - id: num_weights
+    type: u4
+  - id: data_offset_weights
+    type: u4
+  # Mount info
+  - id: num_mounts
+    type: u4
+  - id: data_offset_mounts
+    type: u4
+  # Data block
+  - id: data_block
+    type: data_block
+    size-eos: true
+instances:
+  name:
+    pos: cpj_chunk_header.offset_name
+    type: strz
+    encoding: ASCII
+    if: cpj_chunk_header.offset_name != 0
+types:
+  cpj_chunk_header:
+    seq:
+      - id: magic
+        contents: 'SKLB'
+      - id: file_len # Byte length of file data AFTER this variable
+        type: u4
+      # Format version
+      - id: version
+        # TODO check/ensure that this is version 1
+        type: u4
+      # Chunk creation time stamp
+      - id: time_stamp
+        type: u4
+      - id: offset_name
+        type: u4
+  data_block:
+    instances:
+      bones:
+        type: bone
+        pos: _root.data_offset_bones
+        repeat: expr
+        repeat-expr: _root.num_bones
+      verts:
+        type: vert
+        pos: _root.data_offset_verts
+        repeat: expr
+        repeat-expr: _root.num_verts
+      weights:
+        type: weight
+        pos: _root.data_offset_weights
+        repeat: expr
+        repeat-expr: _root.num_weights
+      mounts:
+        type: mount
+        pos: _root.data_offset_mounts
+        repeat: expr
+        repeat-expr: _root.num_mounts
+  bone:
+    seq:
+      - id: offset_name
+        type: u4
+      - id: parent_index
+        type: u4
+      - id: base_scale
+        type: vec3f
+      - id: base_rotate
+        type: quat
+      - id: base_translate
+        type: vec3f
+      - id: length
+        type: f4
+    instances:
+      name:
+        pos: offset_name
+        type: strz
+        encoding: ASCII
+  vert:
+    seq:
+      - id: num_weights
+        type: u2
+      - id: first_weight
+        type: u2
+  weight:
+    seq:
+      - id: bone_index
+        type: u4
+      - id: weight_factor
+        type: f4
+      - id: offset_pos
+        type: vec3f
+  mount:
+    seq:
+      - id: offset_name
+        type: u4
+      - id: bone_index
+        type: u4
+      - id: base_scale
+        type: vec3f
+      - id: base_rotate
+        type: quat
+      - id: base_translate
+        type: vec3f
+    instances:
+      name:
+        pos: offset_name
+        type: strz
+        encoding: ASCII
+  vec3f:
+    seq:
+      - id: x
+        type: f4
+      - id: y
+        type: f4
+      - id: z
+        type: f4
+  quat:
+    seq:
+      - id: v
+        type: vec3f
+      - id: s
+        type: f4

@@ -1,0 +1,171 @@
+meta:
+  id: geo
+  file-extension: geo
+  title: Cannibal Geometry Chunk
+  license: CC0-1.0
+  endian: le
+doc: |
+  These chunks contain a description of a model's triangular mesh geometry
+  boundary representation which is unchanged regardless of a model instance's
+  animation state.  It describes vertices, edges, triangles, and the
+  connections between them, as well any mount points associated with the
+  model geometry.
+doc-ref: Cannibal/CpjFmt.h
+seq:
+  - id: cpj_chunk_header
+    type: cpj_chunk_header
+  # Vert info
+  - id: num_verts
+    type: u4
+  - id: data_offset_verts
+    type: u4
+  # Edge info
+  - id: num_edges
+    type: u4
+  - id: data_offset_edges
+    type: u4
+  # Tris info
+  - id: num_tris
+    type: u4
+  - id: data_offset_tris
+    type: u4
+  # Mount info
+  - id: num_mounts
+    type: u4
+  - id: data_offset_mounts
+    type: u4
+  # Object links info
+  - id: num_obj_links
+    type: u4
+  - id: data_offset_obj_links
+    type: u4
+  # Data block
+  - id: data_block
+    type: data_block
+    size-eos: true
+instances:
+  name:
+    pos: cpj_chunk_header.offset_name
+    type: strz
+    encoding: ASCII
+    if: cpj_chunk_header.offset_name != 0
+types:
+  cpj_chunk_header:
+    seq:
+      - id: magic
+        contents: 'GEOB'
+      - id: file_len # Byte length of file data AFTER this variable
+        type: u4
+      # Format version
+      - id: version
+        # TODO check/ensure that this is version 1
+        type: u4
+      # Chunk creation time stamp
+      - id: time_stamp
+        type: u4
+      - id: offset_name
+        type: u4
+  data_block:
+    instances:
+      vertices:
+        type: vert
+        pos: _root.data_offset_verts
+        repeat: expr
+        repeat-expr: _root.num_verts
+      edges:
+        type: edge
+        pos: _root.data_offset_edges
+        repeat: expr
+        repeat-expr: _root.num_edges
+      triangles:
+        type: tri
+        pos: _root.data_offset_tris
+        repeat: expr
+        repeat-expr: _root.num_tris
+      mounts:
+        type: mount
+        pos: _root.data_offset_mounts
+        repeat: expr
+        repeat-expr: _root.num_mounts
+      obj_links:
+        type: obj_link
+        pos: _root.data_offset_obj_links
+        repeat: expr
+        repeat-expr: _root.num_obj_links
+  vert:
+    seq:
+      - id: flags
+        type: u1
+      - id: group_index
+        type: u1
+      # Reserved variable for future use, must be zero
+      - id: reserved
+        type: u2
+      - id: num_edge_links
+        type: u2
+      - id: num_tri_links
+        type: u2
+      - id: first_edge_link
+        type: u4
+      - id: first_tri_link
+        type: u4
+      - id: ref_pos
+        type: vec3f
+  edge:
+    seq:
+      - id: head_vertex
+        type: u2
+      - id: tail_vertex
+        type: u2
+      - id: inverted_edge
+        type: u2
+      - id: num_tri_links
+        type: u2
+      - id: first_tri_link
+        type: u4
+  tri:
+    seq:
+      - id: edge_ring
+        type: u2
+        repeat: expr
+        repeat-expr: 3
+      # Reserved variable for future use, must be zero
+      - id: reserved
+        type: u2
+  mount:
+    seq:
+      - id: offset_name
+        type: u4
+      - id: tri_index
+        type: u4
+      - id: tri_barys
+        type: vec3f
+      - id: base_scale
+        type: vec3f
+      - id: base_rotate
+        type: quat
+      - id: base_translate
+        type: vec3f
+    instances:
+      name:
+        pos: offset_name
+        type: strz
+        encoding: ASCII
+  obj_link:
+    seq:
+      - id: link
+        type: u2
+  vec3f:
+    seq:
+      - id: x
+        type: f4
+      - id: y
+        type: f4
+      - id: z
+        type: f4
+  quat:
+    seq:
+      - id: v
+        type: vec3f
+      - id: s
+        type: f4

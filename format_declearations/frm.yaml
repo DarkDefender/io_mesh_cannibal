@@ -1,0 +1,118 @@
+meta:
+  id: frm
+  file-extension: frm
+  title: Cannibal Vertex Frames Chunk
+  license: CC0-1.0
+  endian: le
+doc: |
+  A vertex frames chunk holds one or more vertex frames.  Each vertex frame
+  can be applied directly to the vertices of a geometry definition, for
+  frame-based animation.  The positions may either be raw uncompressed vectors,
+  or compressed into byte positions according to the vertex group indices.
+doc-ref: Cannibal/CpjFmt.h
+seq:
+  - id: cpj_chunk_header
+    type: cpj_chunk_header
+  # Bounding box of all frames
+  - id: bb_min
+    type: vec3f
+  - id: bb_max
+    type: vec3f
+  # Frame info
+  - id: num_frames
+    type: u4
+  - id: data_offset_frames
+    type: u4
+  # Data block
+  - id: data_block
+    type: data_block
+    size-eos: true
+instances:
+  name:
+    pos: cpj_chunk_header.offset_name
+    type: strz
+    encoding: ASCII
+    if: cpj_chunk_header.offset_name != 0
+types:
+  cpj_chunk_header:
+    seq:
+      - id: magic
+        contents: 'FRMB'
+      - id: file_len # Byte length of file data AFTER this variable
+        type: u4
+      # Format version
+      - id: version
+        # TODO check/ensure that this is version 1
+        type: u4
+      # Chunk creation time stamp
+      - id: time_stamp
+        type: u4
+      - id: offset_name
+        type: u4
+  data_block:
+    instances:
+      frames:
+        type: frame
+        pos: _root.data_offset_frames
+        repeat: expr
+        repeat-expr: _root.num_frames
+  frame:
+    seq:
+      - id: offset_name
+        type: u4
+      - id: bb_min
+        type: vec3f
+      - id: bb_max
+        type: vec3f
+      # Compression group info
+      - id: num_groups
+        type: u4
+      - id: data_offset_groups
+        type: u4
+      # Vertex pos info
+      - id: num_verts
+        type: u4
+      - id: data_offset_verts
+        type: u4
+    instances:
+      name:
+        pos: offset_name
+        type: strz
+        encoding: ASCII
+      groups:
+        pos: data_offset_groups
+        type: group
+        if: num_groups != 0
+        repeat: expr
+        repeat-expr: num_groups
+      verts:
+        pos: data_offset_verts
+        type:
+          switch-on: num_groups
+          cases:
+            0: vec3f
+            _: byte_pos
+        repeat: expr
+        repeat-expr: num_verts
+  group:
+    seq:
+      - id: byte_scale
+        type: vec3f
+      - id: byte_translate
+        type: vec3f
+  byte_pos:
+    seq:
+      - id: group
+        type: u1
+      - id: pos
+        type: u1
+        repeat: expr
+        repeat-expr: 3
+  vec3f:
+    seq:
+      - id: x
+        type: f4
+      - id: y
+        type: f4
+      - id: z
+        type: f4
