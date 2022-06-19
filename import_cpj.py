@@ -19,10 +19,7 @@
 # <pep8 compliant>
 
 # ----------------------------------------------------------------------------
-import struct
-import ctypes
 import colorsys
-import random
 import bpy
 import bmesh
 
