@@ -72,7 +72,7 @@ def load_geo(geo_data):
 
     for vert in verts:
         ref = vert.ref_pos
-        cpj_verts.append((ref.x, ref.z, ref.y))
+        cpj_verts.append((ref.x, -ref.z, ref.y))
 
     edges = geo_data.data_block.edges
 

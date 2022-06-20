@@ -67,7 +67,7 @@ def write_cpj_file(out_file_name, byte_data_list):
     file.close()
 
 def create_cpj_chunk_header_byte_array(type, data_len, version, name_offset):
-    # The header takes up an additonal 3*4 bytes (we start counting total lenght at the version integer)
+    # The header takes up an additonal 3*4 bytes (we start counting total lenght at the "version" integer)
     data_len += 3*4
     # Create magic type id
     byte_arr = bytes(type, "ASCII")
