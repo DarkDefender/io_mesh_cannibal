@@ -72,13 +72,13 @@ def create_cpj_chunk_header_byte_array(type, data_len, version, name_offset):
     # Create magic type id
     byte_arr = bytes(type, "ASCII")
     # Write the byte lenght of this CPJ chunk
-    byte_arr += struct.pack("I", data_len);
+    byte_arr += struct.pack("I", data_len)
     # Write format version
-    byte_arr += struct.pack("I", version);
+    byte_arr += struct.pack("I", version)
     # Write creation timestamp
-    byte_arr += struct.pack("I", int(datetime.datetime.today().timestamp()));
+    byte_arr += struct.pack("I", int(datetime.datetime.today().timestamp()))
     # Write name offset
-    byte_arr += struct.pack("I", name_offset);
+    byte_arr += struct.pack("I", name_offset)
     return byte_arr
 
 def string_to_byte_string(str):
@@ -87,8 +87,125 @@ def string_to_byte_string(str):
 
 CPJ_FRM_MAGIC = "FRMB"
 CPJ_FRM_VERSION = 1
-def create_frm_byte_array():
-    return
+def create_frm_byte_array(name, total_bb, frames):
+    byte_arr = b''
+    # The start of the data block (not the chunk).
+    data_block_offset = 0
+
+    # Write chunk name (if any)
+    if name != "":
+        byte_str = string_to_byte_string(name)
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    frame_name_offsets = []
+    groups_offsets = []
+    verts_offsets = []
+
+    # Write all frame array/list type data
+    for frame in frames:
+        frame_name_offsets.append(data_block_offset)
+
+        byte_str = string_to_byte_string(frame[0])
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+        group_offset = data_block_offset
+
+        # Write frame groups
+        for group_data in frame[4]:
+            # byte_scale
+            for i in range(3):
+                byte_scale = group_data[0]
+                byte_arr += struct.pack("f", byte_scale[i])
+            # byte_translate
+            for i in range(3):
+                byte_translate = group_data[1]
+                byte_arr += struct.pack("f", byte_translate[i])
+
+            # 3*4 + 3*4 = 24
+            data_block_offset += 24
+
+        groups_offsets.append(group_offset)
+
+        vert_offset = data_block_offset
+
+        # Write frame verts
+        for vert in frame[6]:
+            # If there are no groups, then we are storing uncompressed vertex positions
+            if (len(frame[4]) == 0):
+                # vertex pos
+                for i in range(3):
+                    byte_arr += struct.pack("f", vert[i])
+                # 3*4
+                data_block_offset += 12
+                continue
+            # This vert is stored as compressed byte data
+            # group
+            byte_arr += struct.pack("B", vert[0])
+            # pos
+            for i in range(3):
+                pos = vert[1]
+                byte_arr += struct.pack("B", pos[i])
+            # 1 + 3*1
+            data_block_offset += 4
+
+        verts_offsets.append(vert_offset)
+
+    offset_frames = data_block_offset
+
+    # Write all remaining frame data
+    for i, frame in enumerate(frames):
+        # offset_name
+        byte_arr += struct.pack("I", frame_name_offsets[i])
+        # bb_min
+        for x in range(3):
+            bb_min = frame[1]
+            byte_arr += struct.pack("f", bb_min[x])
+        # bb_max
+        for x in range(3):
+            bb_max = frame[2]
+            byte_arr += struct.pack("f", bb_max[x])
+        # num_groups
+        byte_arr += struct.pack("I", frame[3])
+        # data_offset_groups
+        byte_arr += struct.pack("I", groups_offsets[i])
+        # num_verts
+        byte_arr += struct.pack("I", frame[5])
+        # data_offset_verts
+        byte_arr += struct.pack("I", verts_offsets[i])
+        # 4 + 3*4 + 3*4 + 4*4
+        data_block_offset += 44
+
+    frm_info_bytes = b''
+
+    # bb_min
+    for i in range(3):
+        frm_info_bytes += struct.pack("f", total_bb[0][i])
+    # bb_max
+    for i in range(3):
+        frm_info_bytes += struct.pack("f", total_bb[1][i])
+
+    frm_info_bytes += struct.pack("I", len(frames))
+    frm_info_bytes += struct.pack("I", offset_frames)
+
+    info_offset = 3*4 + 3*4 + 2*4
+    # The cpj header is 20 bytes (5*4)
+    name_offset = 20 + info_offset
+
+    # We already took into account the offset of these info variables at the start of the function
+    data_len = data_block_offset + info_offset
+
+    frm_header_byte_arr = create_cpj_chunk_header_byte_array(CPJ_FRM_MAGIC, data_len, CPJ_FRM_VERSION, name_offset)
+    byte_arr = frm_header_byte_arr + frm_info_bytes + byte_arr
+
+    # Sanity check
+    if (len(byte_arr) != data_len + 20):
+        raise ValueError("The calculated byte lenght of the array doesn't match up with the actual size!")
+
+    return byte_arr
 
 CPJ_GEO_MAGIC = "GEOB"
 CPJ_GEO_VERSION = 1
@@ -97,7 +214,7 @@ def create_geo_byte_array(name, verts, edges, tris, mounts, obj_links):
     # The start of the data block (not the chunk).
     data_block_offset = 0
 
-    # Write chunk name (is any)
+    # Write chunk name (if any)
     if name != "":
         byte_str = string_to_byte_string(name)
         byte_arr += byte_str
@@ -111,22 +228,22 @@ def create_geo_byte_array(name, verts, edges, tris, mounts, obj_links):
     # Write vertex data
     for vert in verts:
         # flags
-        byte_arr += struct.pack("B", vert[0]);
+        byte_arr += struct.pack("B", vert[0])
         # group_index
-        byte_arr += struct.pack("B", vert[1]);
+        byte_arr += struct.pack("B", vert[1])
         # reserved
-        byte_arr += struct.pack("H", vert[2]);
+        byte_arr += struct.pack("H", vert[2])
         # num_edge_links
-        byte_arr += struct.pack("H", vert[3]);
+        byte_arr += struct.pack("H", vert[3])
         # num_tri_links
-        byte_arr += struct.pack("H", vert[4]);
+        byte_arr += struct.pack("H", vert[4])
         # first_edge_link
-        byte_arr += struct.pack("I", vert[5]);
+        byte_arr += struct.pack("I", vert[5])
         # first_tri_link
-        byte_arr += struct.pack("I", vert[6]);
+        byte_arr += struct.pack("I", vert[6])
         for i in range(3):
             vert_co = vert[7]
-            byte_arr += struct.pack("f", vert_co[i]);
+            byte_arr += struct.pack("f", vert_co[i])
         # 2*1 + 3*2 + 2*4 + 3*4
         data_block_offset += 28
 
@@ -134,15 +251,15 @@ def create_geo_byte_array(name, verts, edges, tris, mounts, obj_links):
     # Write edge data
     for edge_data in edges:
         # head_vertex
-        byte_arr += struct.pack("H", edge_data[0]);
+        byte_arr += struct.pack("H", edge_data[0])
         # tail_vertex
-        byte_arr += struct.pack("H", edge_data[1]);
+        byte_arr += struct.pack("H", edge_data[1])
         # inverted_edge
-        byte_arr += struct.pack("H", edge_data[2]);
+        byte_arr += struct.pack("H", edge_data[2])
         # num_tri_links
-        byte_arr += struct.pack("H", edge_data[3]);
+        byte_arr += struct.pack("H", edge_data[3])
         # first_tri_link
-        byte_arr += struct.pack("I", edge_data[4]);
+        byte_arr += struct.pack("I", edge_data[4])
         # 4*2 + 4 = 22 bytes
         data_block_offset += 12
 
@@ -153,9 +270,9 @@ def create_geo_byte_array(name, verts, edges, tris, mounts, obj_links):
         for i in range(3):
             edge_ring = tri_data[0]
             # index of the edge this triangle consists of
-            byte_arr += struct.pack("H", edge_ring[i]);
+            byte_arr += struct.pack("H", edge_ring[i])
         # reserved
-        byte_arr += struct.pack("H", tri_data[1]);
+        byte_arr += struct.pack("H", tri_data[1])
         # 3*2 + 2 = 8 bytes
         data_block_offset += 8
 
@@ -171,28 +288,27 @@ def create_geo_byte_array(name, verts, edges, tris, mounts, obj_links):
 
     offset_mounts = data_block_offset
     # Write mount data
-    for i in range(len(mounts)):
-        mount_data = mount_data[i]
+    for i, mount_data in enumerate(mounts):
         # offset_name
-        byte_arr += struct.pack("I", mount_str_offsets[i]);
+        byte_arr += struct.pack("I", mount_str_offsets[i])
         # tri_index
-        byte_arr += struct.pack("I", mount_data[1]);
+        byte_arr += struct.pack("I", mount_data[1])
         # tri_barys
         for x in range(3):
             tri_barys = mount_data[2]
-            byte_arr += struct.pack("f", tri_barys[x]);
+            byte_arr += struct.pack("f", tri_barys[x])
         # base_scale
         for x in range(3):
             base_scale = mount_data[3]
-            byte_arr += struct.pack("f", basc_scale[x] );
+            byte_arr += struct.pack("f", basc_scale[x])
         # base_rotate
         for x in range(4):
             base_rotate = mount_data[4]
-            byte_arr += struct.pack("f", base_rotate[x]);
+            byte_arr += struct.pack("f", base_rotate[x])
         # base_translate
         for x in range(3):
             base_translate = mount_data[5]
-            byte_arr += struct.pack("f", base_translate[x]);
+            byte_arr += struct.pack("f", base_translate[x])
         # 2*4 + 3*4 + 3*4 + 4*4 + 3*4 = 8 bytes
         data_block_offset += 60
 
@@ -200,25 +316,25 @@ def create_geo_byte_array(name, verts, edges, tris, mounts, obj_links):
     # Write object link data
     for obj_link in obj_links:
         # link
-        byte_arr += struct.pack("H", obj_link);
+        byte_arr += struct.pack("H", obj_link)
         data_block_offset += 2
 
     geo_info_bytes = b''
 
-    geo_info_bytes += struct.pack("I", len(verts));
-    geo_info_bytes += struct.pack("I", offset_verts);
+    geo_info_bytes += struct.pack("I", len(verts))
+    geo_info_bytes += struct.pack("I", offset_verts)
 
-    geo_info_bytes += struct.pack("I", len(edges));
-    geo_info_bytes += struct.pack("I", offset_edges);
+    geo_info_bytes += struct.pack("I", len(edges))
+    geo_info_bytes += struct.pack("I", offset_edges)
 
-    geo_info_bytes += struct.pack("I", len(tris));
-    geo_info_bytes += struct.pack("I", offset_tris);
+    geo_info_bytes += struct.pack("I", len(tris))
+    geo_info_bytes += struct.pack("I", offset_tris)
 
-    geo_info_bytes += struct.pack("I", len(mounts));
-    geo_info_bytes += struct.pack("I", offset_mounts);
+    geo_info_bytes += struct.pack("I", len(mounts))
+    geo_info_bytes += struct.pack("I", offset_mounts)
 
-    geo_info_bytes += struct.pack("I", len(obj_links));
-    geo_info_bytes += struct.pack("I", offset_obj_links);
+    geo_info_bytes += struct.pack("I", len(obj_links))
+    geo_info_bytes += struct.pack("I", offset_obj_links)
 
     info_offset = 10*4
     # The cpj header is 20 bytes (5*4)
@@ -238,7 +354,85 @@ def create_geo_byte_array(name, verts, edges, tris, mounts, obj_links):
 
 CPJ_LOD_MAGIC = "LODB"
 CPJ_LOD_VERSION = 3
-def create_lod_byte_array():
+def create_lod_byte_array(name, levels, tris, vert_relay):
+    byte_arr = b''
+    # The start of the data block (not the chunk).
+    data_block_offset = 0
+
+    # Write chunk name (if any)
+    if name != "":
+        byte_str = string_to_byte_string(name)
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    offset_levels = data_block_offset
+
+    # Write level data
+    for level_data in levels:
+        #detail
+        byte_arr += struct.pack("f", level_data[0])
+        # num_tri
+        byte_arr += struct.pack("I", level_data[1])
+        # num_vert_relay
+        byte_arr += struct.pack("I", level_data[2])
+        # first_tri
+        byte_arr += struct.pack("I", level_data[3])
+        # first_vert_replay
+        byte_arr += struct.pack("I", level_data[4])
+        # 5*4 = 20
+        data_block_offset += 20
+
+    offset_tris = data_block_offset
+
+    # Write tri data
+    for tri_data in tris:
+        # tri_index
+        byte_arr += struct.pack("I", tri_data[0])
+        # vert_index
+        for i in range(3):
+            vert_index = tri_data[1]
+            byte_arr += struct.pack("H", vert_index[i])
+        # uv_index
+        for i in range(3):
+            uv_index = tri_data[2]
+            byte_arr += struct.pack("H", uv_index[i])
+        # 4 + 3*2 + 3*2 = 16
+        data_block_offset += 16
+
+    offset_vert_relay = data_block_offset
+
+    # Write vert_relay data
+    for vr_data in vert_relay:
+        byte_arr += struct.pack("H", vr_data)
+        data_block_offset += 2
+
+    lod_info_bytes = b''
+
+    lod_info_bytes += struct.pack("I", len(levels))
+    lod_info_bytes += struct.pack("I", offset_levels)
+
+    lod_info_bytes += struct.pack("I", len(tris))
+    lod_info_bytes += struct.pack("I", offset_tris)
+
+    lod_info_bytes += struct.pack("I", len(vert_relay))
+    lod_info_bytes += struct.pack("I", offset_vert_relay)
+
+    info_offset = 6*4
+    # The cpj header is 20 bytes (5*4)
+    name_offset = 20 + info_offset
+
+    # We already took into account the offset of these info variables at the start of the function
+    data_len = data_block_offset + info_offset
+
+    lod_header_byte_arr = create_cpj_chunk_header_byte_array(CPJ_LOD_MAGIC, data_len, CPJ_LOD_VERSION, name_offset)
+    byte_arr = lod_header_byte_arr + lod_info_bytes + byte_arr
+
+    # Sanity check
+    if (len(byte_arr) != data_len + 20):
+        raise ValueError("The calculated byte lenght of the array doesn't match up with the actual size!")
+
+    return byte_arr
     return
 
 CPJ_MAC_MAGIC = "MACB"
@@ -274,10 +468,10 @@ def create_mac_byte_array(name, command_strings):
     offset_sections = data_block_offset
     # Write all section data in a contious block
     for i in range(num_sections):
-        # TODO currently this is only written to handle the dummy autoexec case
-        byte_arr += struct.pack("I", sec_offset_names[i]);
-        byte_arr += struct.pack("I", sec_num_commands);
-        byte_arr += struct.pack("I", first_sec_command);
+        # TODO currently this loop is only written to handle the dummy autoexec case
+        byte_arr += struct.pack("I", sec_offset_names[i])
+        byte_arr += struct.pack("I", sec_num_commands)
+        byte_arr += struct.pack("I", first_sec_command)
 
         data_block_offset += 12 #(3 * 4) bytes for each section
 
@@ -295,17 +489,17 @@ def create_mac_byte_array(name, command_strings):
 
     # Write command data in a contious block
     for offset in com_str_offsets:
-        byte_arr += struct.pack("I", offset);
+        byte_arr += struct.pack("I", offset)
 
         data_block_offset += 4
 
     mac_info_bytes = b''
 
-    mac_info_bytes += struct.pack("I", num_sections);
-    mac_info_bytes += struct.pack("I", offset_sections);
+    mac_info_bytes += struct.pack("I", num_sections)
+    mac_info_bytes += struct.pack("I", offset_sections)
 
-    mac_info_bytes += struct.pack("I", len(command_strings));
-    mac_info_bytes += struct.pack("I", offset_commands);
+    mac_info_bytes += struct.pack("I", len(command_strings))
+    mac_info_bytes += struct.pack("I", offset_commands)
 
     info_offset = 4*4
     # The cpj header is 20 bytes (5*4)
@@ -341,7 +535,7 @@ def create_srf_byte_array(name, textures, tris, uv_coords):
     # The start of the data block (not the chunk).
     data_block_offset = 0
 
-    # Write chunk name (is any)
+    # Write chunk name (if any)
     if name != "":
         byte_str = string_to_byte_string(name)
         byte_arr += byte_str
@@ -369,8 +563,8 @@ def create_srf_byte_array(name, textures, tris, uv_coords):
 
     # Write texture string offsets
     for offsets in texture_string_offsets:
-        byte_arr += struct.pack("I", offsets[0]);
-        byte_arr += struct.pack("I", offsets[1]);
+        byte_arr += struct.pack("I", offsets[0])
+        byte_arr += struct.pack("I", offsets[1])
         data_block_offset += 8 #(2 * 4) bytes for each section
 
     offset_tris = data_block_offset
@@ -380,40 +574,40 @@ def create_srf_byte_array(name, textures, tris, uv_coords):
         for i in range(3):
             uv_index = tri_data[0]
             # index of uvs in uv_coords
-            byte_arr += struct.pack("H", uv_index[i]);
+            byte_arr += struct.pack("H", uv_index[i])
         # tex_index
-        byte_arr += struct.pack("B", tri_data[1]);
+        byte_arr += struct.pack("B", tri_data[1])
         # reserved
-        byte_arr += struct.pack("B", tri_data[2]);
+        byte_arr += struct.pack("B", tri_data[2])
         # flags
-        byte_arr += struct.pack("I", tri_data[3]);
+        byte_arr += struct.pack("I", tri_data[3])
         # smooth_group
-        byte_arr += struct.pack("B", tri_data[4]);
+        byte_arr += struct.pack("B", tri_data[4])
         # alpha_level
-        byte_arr += struct.pack("B", tri_data[5]);
+        byte_arr += struct.pack("B", tri_data[5])
         # glaze_tex_index
-        byte_arr += struct.pack("B", tri_data[6]);
+        byte_arr += struct.pack("B", tri_data[6])
         # glaze_func
-        byte_arr += struct.pack("B", tri_data[7]);
+        byte_arr += struct.pack("B", tri_data[7])
         # 3*2 + 2*1 + 4 + 4*1 = 16 bytes
         data_block_offset += 16
 
     offset_uvs = data_block_offset
     for uv_co in uv_coords:
-        byte_arr += struct.pack("f", uv_co[0]);
-        byte_arr += struct.pack("f", uv_co[1]);
+        byte_arr += struct.pack("f", uv_co[0])
+        byte_arr += struct.pack("f", uv_co[1])
         data_block_offset += 8 #(2 * 4) bytes for each section
 
     srf_info_bytes = b''
 
-    srf_info_bytes += struct.pack("I", len(textures));
-    srf_info_bytes += struct.pack("I", offset_textures);
+    srf_info_bytes += struct.pack("I", len(textures))
+    srf_info_bytes += struct.pack("I", offset_textures)
 
-    srf_info_bytes += struct.pack("I", len(tris));
-    srf_info_bytes += struct.pack("I", offset_tris);
+    srf_info_bytes += struct.pack("I", len(tris))
+    srf_info_bytes += struct.pack("I", offset_tris)
 
-    srf_info_bytes += struct.pack("I", len(uv_coords));
-    srf_info_bytes += struct.pack("I", offset_uvs);
+    srf_info_bytes += struct.pack("I", len(uv_coords))
+    srf_info_bytes += struct.pack("I", offset_uvs)
 
     info_offset = 6*4
     # The cpj header is 20 bytes (5*4)
