@@ -525,8 +525,143 @@ def create_seq_byte_array():
 
 CPJ_SKL_MAGIC = "SKLB"
 CPJ_SKL_VERSION = 1
-def create_skl_byte_array():
-    return
+def create_skl_byte_array(name, bones, verts, weights, mounts):
+    byte_arr = b''
+    # The start of the data block (not the chunk).
+    data_block_offset = 0
+
+    # Write chunk name (if any)
+    if name != "":
+        byte_str = string_to_byte_string(name)
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    bone_str_offsets = []
+
+    # Write bone name strings
+    for bone_data in bones:
+        bone_str_offsets.append(data_block_offset)
+        byte_str = string_to_byte_string(bone_data[0])
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    offset_bones = data_block_offset
+
+    # Write bone data
+    for i, bone_data in enumerate(bones):
+        # offset_name
+        byte_arr += struct.pack("I", bone_str_offsets[i])
+        # parent_index
+        byte_arr += struct.pack("I", bone_data[1])
+        # base_scale
+        for x in range(3):
+            base_scale = bone_data[2]
+            byte_arr += struct.pack("f", base_scale[x])
+        # base_rotate
+        for x in range(4):
+            base_rotate = bone_data[3]
+            byte_arr += struct.pack("f", base_rotate[x])
+        # base_translate
+        for x in range(3):
+            base_translate = bone_data[4]
+            byte_arr += struct.pack("f", base_translate[x])
+        # length
+        byte_arr += struct.pack("f", bone_data[5])
+
+        # 2*4 + 3*4 + 4*4 + 3*4 + 4 = 52
+        data_block_offset += 52
+
+    offset_verts = data_block_offset
+
+    # Write vert data
+    for vert_data in verts:
+        # num_weights
+        byte_arr += struct.pack("H", vert_data[0])
+        # first_weight
+        byte_arr += struct.pack("H", vert_data[1])
+        # 2*2
+        data_block_offset += 4
+
+    offset_weights = data_block_offset
+
+    # Write weight data
+    for weight_data in weights:
+        # bone_index
+        byte_arr += struct.pack("I", weight_data[0])
+        # weight_factor
+        byte_arr += struct.pack("f", weight_data[1])
+        # offset_pos
+        for i in range(3):
+            offset_pos = weight_data[2]
+            byte_arr += struct.pack("f", offset_pos[i])
+        # 2*4 + 3*4 = 20
+        data_block_offset += 20
+
+    mount_str_offsets = []
+
+    # Write mount names
+    for mount_data in mounts:
+        mount_str_offsets.append(data_block_offset)
+        byte_str = string_to_byte_string(mount_data[0])
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    offset_mounts = data_block_offset
+
+    # Write mount data
+    for i, mount_data in enumerate(mounts):
+        # offset_name
+        byte_arr += struct.pack("I", mount_str_offsets[i])
+        # bone_index
+        byte_arr += struct.pack("I", mount_data[1])
+        # base_scale
+        for x in range(3):
+            base_scale = bone_data[2]
+            byte_arr += struct.pack("f", base_scale[x])
+        # base_rotate
+        for x in range(4):
+            base_rotate = bone_data[3]
+            byte_arr += struct.pack("f", base_rotate[x])
+        # base_translate
+        for x in range(3):
+            base_translate = bone_data[4]
+            byte_arr += struct.pack("f", base_translate[x])
+        # 2*4 + 3*4 + 4*4 + 3*4 = 52
+        data_block_offset += 48
+
+    skl_info_bytes = b''
+
+    skl_info_bytes += struct.pack("I", len(bones))
+    skl_info_bytes += struct.pack("I", offset_bones)
+
+    skl_info_bytes += struct.pack("I", len(verts))
+    skl_info_bytes += struct.pack("I", offset_verts)
+
+    skl_info_bytes += struct.pack("I", len(weights))
+    skl_info_bytes += struct.pack("I", offset_weights)
+
+    skl_info_bytes += struct.pack("I", len(mounts))
+    skl_info_bytes += struct.pack("I", offset_mounts)
+
+    info_offset = 2*4 + 2*4 + 2*4 + 2*4
+    # The cpj header is 20 bytes (5*4)
+    name_offset = 20 + info_offset
+
+    # We already took into account the offset of these info variables at the start of the function
+    data_len = data_block_offset + info_offset
+
+    skl_header_byte_arr = create_cpj_chunk_header_byte_array(CPJ_SKL_MAGIC, data_len, CPJ_SKL_VERSION, name_offset)
+    # Add it all together
+    byte_arr = skl_header_byte_arr + skl_info_bytes + byte_arr
+
+    # Sanity check
+    if (len(byte_arr) != data_len + 20):
+        raise ValueError("The calculated byte lenght of the array doesn't match up with the actual size!")
+
+    return byte_arr
 
 CPJ_SRF_MAGIC = "SRFB"
 CPJ_SRF_VERSION = 1

@@ -1,14 +1,11 @@
 from cpj_utils import *
 
-from formats.mac import Mac
-from formats.srf import Srf
-
 from compare_data import *
 
-file_data1 = load_cpj_data("/tmp/fire_pole.cpj")
+file_data1 = load_cpj_data("/tmp/Edf_dog.cpj")
 #file_data2 = load_cpj_data("/tmp/smokealarm.cpj")
 
-frm_data1 = Frm.from_bytes(file_data1["FRMB"][0])
+#frm_data1 = Frm.from_bytes(file_data1["FRMB"][0])
 
 geo_data1 = Geo.from_bytes(file_data1["GEOB"][0])
 #geo_data2 = Geo.from_bytes(file_data2["GEOB"][0])
@@ -24,46 +21,48 @@ mac_data1 = Mac.from_bytes(file_data1["MACB"][0])
 
 srf_data1 = Srf.from_bytes(file_data1["SRFB"][0])
 
+skl_data1 = Skl.from_bytes(file_data1["SKLB"][0])
+
 # construct a vertex frame animation data list
-frames = []
-for frame_data in frm_data1.data_block.frames:
-    frame = []
-    frame.append(frame_data.name)
-    bb_min = frame_data.bb_min
-    frame.append((bb_min.x, bb_min.y, bb_min.z))
-    bb_max = frame_data.bb_max
-    frame.append((bb_max.x, bb_max.y, bb_max.z))
-
-    frame.append(frame_data.num_groups)
-    frame_groups = []
-    for group_data in frame_data.groups:
-        byte_scale = group_data.byte_scale
-        bs = (byte_scale.x, byte_scale.y, byte_scale.z)
-        byte_trans = group_data.byte_translate
-        bt = (byte_trans.x, byte_trans.y, byte_trans.z)
-        frame_groups.append((bs, bt))
-    frame.append(frame_groups)
-
-    frame.append(frame_data.num_verts)
-    frame_verts = []
-    for vert_data in frame_data.verts:
-        if (frame_data.num_groups == 0):
-            # Save uncompressed vert data
-            frame_verts.append((vert_data.x, vert_data.y, vert_data.z))
-            continue
-        # Save compressed data
-        pos = vert_data.pos
-        frame_verts.append((vert_data.group, (pos[0], pos[1], pos[2])))
-    frame.append(frame_verts)
-
-    frames.append(frame)
-
-frm_bb_min = (frm_data1.bb_min.x, frm_data1.bb_min.y, frm_data1.bb_min.z)
-frm_bb_max = (frm_data1.bb_max.x, frm_data1.bb_max.y, frm_data1.bb_max.z)
-
-frm_byte_data = create_frm_byte_array(frm_data1.name, (frm_bb_min, frm_bb_max), frames)
-
-parse_and_compare_data("FRMB", file_data1["FRMB"][0], frm_byte_data)
+#frames = []
+#for frame_data in frm_data1.data_block.frames:
+#    frame = []
+#    frame.append(frame_data.name)
+#    bb_min = frame_data.bb_min
+#    frame.append((bb_min.x, bb_min.y, bb_min.z))
+#    bb_max = frame_data.bb_max
+#    frame.append((bb_max.x, bb_max.y, bb_max.z))
+#
+#    frame.append(frame_data.num_groups)
+#    frame_groups = []
+#    for group_data in frame_data.groups:
+#        byte_scale = group_data.byte_scale
+#        bs = (byte_scale.x, byte_scale.y, byte_scale.z)
+#        byte_trans = group_data.byte_translate
+#        bt = (byte_trans.x, byte_trans.y, byte_trans.z)
+#        frame_groups.append((bs, bt))
+#    frame.append(frame_groups)
+#
+#    frame.append(frame_data.num_verts)
+#    frame_verts = []
+#    for vert_data in frame_data.verts:
+#        if (frame_data.num_groups == 0):
+#            # Save uncompressed vert data
+#            frame_verts.append((vert_data.x, vert_data.y, vert_data.z))
+#            continue
+#        # Save compressed data
+#        pos = vert_data.pos
+#        frame_verts.append((vert_data.group, (pos[0], pos[1], pos[2])))
+#    frame.append(frame_verts)
+#
+#    frames.append(frame)
+#
+#frm_bb_min = (frm_data1.bb_min.x, frm_data1.bb_min.y, frm_data1.bb_min.z)
+#frm_bb_max = (frm_data1.bb_max.x, frm_data1.bb_max.y, frm_data1.bb_max.z)
+#
+#frm_byte_data = create_frm_byte_array(frm_data1.name, (frm_bb_min, frm_bb_max), frames)
+#
+#parse_and_compare_data("FRMB", file_data1["FRMB"][0], frm_byte_data)
 
 # construct a mac information data list
 command_strings = []
@@ -122,7 +121,7 @@ for mount_data in geo_data1.data_block.mounts:
     base_scale = mount_data.base_scale
     mount.append((base_scale.x, base_scale.y, base_scale.z))
     base_rotate = mount_data.base_rotate
-    mount.append((base_rotate.v.x, base_rotate.v.y, base_rotate.v.z, base_ratate.s))
+    mount.append((base_rotate.v.x, base_rotate.v.y, base_rotate.v.z, base_rotate.s))
     base_translate = mount_data.base_translate
     mount.append((base_translate.x, base_translate.y, base_translate.z))
 
@@ -167,7 +166,7 @@ srf_byte_data = create_srf_byte_array(srf_data1.name, textures, tris, uv_coords)
 
 parse_and_compare_data("SRFB", file_data1["SRFB"][0], srf_byte_data)
 
-# construct a lod data list
+# construct lod data lists
 
 levels = []
 tris = []
@@ -198,6 +197,58 @@ for vert_relay_data in lod_data1.data_block.vert_relay:
 
 lod_byte_data = create_lod_byte_array(lod_data1.name, levels, tris, vert_relay)
 
+parse_and_compare_data("LODB", file_data1["LODB"][0], lod_byte_data)
+
+# construct a skl data lists
+
+bones = []
+verts = []
+weights = []
+mounts = []
+
+for bone_data in skl_data1.data_block.bones:
+    bone = []
+    bone.append(bone_data.name)
+    bone.append(bone_data.parent_index)
+    base_scale = bone_data.base_scale
+    bone.append((base_scale.x, base_scale.y, base_scale.z))
+    base_rotate = bone_data.base_rotate
+    bone.append((base_rotate.v.x, base_rotate.v.y, base_rotate.v.z, base_rotate.s))
+    base_translate = bone_data.base_translate
+    bone.append((base_translate.x, base_translate.y, base_translate.z))
+    bone.append(bone_data.length)
+
+    bones.append(bone)
+
+for vert in skl_data1.data_block.verts:
+    verts.append([vert.num_weights, vert.first_weight])
+
+for weight_data in skl_data1.data_block.weights:
+    weight = []
+    weight.append(weight_data.bone_index)
+    weight.append(weight_data.weight_factor)
+    op = weight_data.offset_pos
+    weight.append((op.x, op.y, op.z))
+
+    weights.append(weight)
+
+for mount_data in skl_data1.data_block.mounts:
+    mount = []
+    mount.append(mount_data.name)
+    mount.append(mount_data.bone_index)
+    base_scale = mount_data.base_scale
+    mount.append((base_scale.x, base_scale.y, base_scale.z))
+    base_rotate = mount_data.base_rotate
+    mount.append((base_rotate.v.x, base_rotate.v.y, base_rotate.v.z, base_rotate.s))
+    base_translate = mount_data.base_translate
+    mount.append((base_translate.x, base_translate.y, base_translate.z))
+
+    mounts.append(mount)
+
+skl_byte_data = create_skl_byte_array(skl_data1.name, bones, verts, weights, mounts)
+
+parse_and_compare_data("SKLB", file_data1["SKLB"][0], skl_byte_data)
+
 # byte_array_list = []
 #for key in file_data1:
 #    for byte_array in file_data1[key]:
@@ -205,7 +256,7 @@ lod_byte_data = create_lod_byte_array(lod_data1.name, levels, tris, vert_relay)
 #
 
 # Finally write the cpj file to disk
-byte_array_list = [ frm_byte_data, mac_byte_data, geo_byte_data, srf_byte_data, lod_byte_data ]
+byte_array_list = [ mac_byte_data, geo_byte_data, srf_byte_data, lod_byte_data ]
 
 write_cpj_file("/tmp/out.cpj", byte_array_list)
 
