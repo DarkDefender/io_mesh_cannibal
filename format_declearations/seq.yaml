@@ -154,7 +154,7 @@ types:
       - id: offset_param_str
         type: s4
     instances:
-      vert_frame_name:
+      param_str:
         pos: offset_param_str
         type: strz
         encoding: ASCII

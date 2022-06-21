@@ -96,17 +96,17 @@ class Seq(KaitaiStruct):
             self.offset_param_str = self._io.read_s4le()
 
         @property
-        def vert_frame_name(self):
-            if hasattr(self, '_m_vert_frame_name'):
-                return self._m_vert_frame_name if hasattr(self, '_m_vert_frame_name') else None
+        def param_str(self):
+            if hasattr(self, '_m_param_str'):
+                return self._m_param_str if hasattr(self, '_m_param_str') else None
 
             if self.offset_param_str != -1:
                 _pos = self._io.pos()
                 self._io.seek(self.offset_param_str)
-                self._m_vert_frame_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
+                self._m_param_str = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
                 self._io.seek(_pos)
 
-            return self._m_vert_frame_name if hasattr(self, '_m_vert_frame_name') else None
+            return self._m_param_str if hasattr(self, '_m_param_str') else None
 
 
     class BoneRotate(KaitaiStruct):

@@ -520,8 +520,187 @@ def create_mac_byte_array(name, command_strings):
 
 CPJ_SEQ_MAGIC = "SEQB"
 CPJ_SEQ_VERSION = 1
-def create_seq_byte_array():
-    return
+def create_seq_byte_array(name, play_rate, frames, events, bone_info, bone_translate, bone_rotate, bone_scale):
+    byte_arr = b''
+    # The start of the data block (not the chunk).
+    data_block_offset = 0
+
+    # Write chunk name (if any)
+    if name != "":
+        byte_str = string_to_byte_string(name)
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    vert_f_name_offsets = []
+
+    # Write all vert_frame_name strings (if any)
+    for frame_data in frames:
+        if frame_data[7] == None:
+            # No name, set the offset to -1
+            vert_f_name_offsets.append(-1)
+            continue
+        # Write name string
+        vert_f_name_offsets.append(data_block_offset)
+        byte_str = string_to_byte_string(frame_data[7])
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    offset_frames = data_block_offset
+
+    # Write frame data
+    for i, frame_data in enumerate(frames):
+        # reserved
+        byte_arr += struct.pack("B", frame_data[0])
+        # num_bone_translate
+        byte_arr += struct.pack("B", frame_data[1])
+        # num_bone_rotate
+        byte_arr += struct.pack("B", frame_data[2])
+        # num_bone_scale
+        byte_arr += struct.pack("B", frame_data[3])
+        # first_bone_translate
+        byte_arr += struct.pack("I", frame_data[4])
+        # first_bone_rotate
+        byte_arr += struct.pack("I", frame_data[5])
+        # first_bone_scale
+        byte_arr += struct.pack("I", frame_data[6])
+        # offset_vert_frame_name
+        byte_arr += struct.pack("i", vert_f_name_offsets[i])
+        # 4*1 + 4*4 = 20
+        data_block_offset += 20
+
+    event_str_offsets = []
+
+    # Write all param_str strings (if any)
+    for event_data in events:
+        if event_data[3] == None:
+            # No name, set the offset to -1
+            event_str_offsets.append(-1)
+            continue
+        # Write name string
+        event_str_offsets.append(data_block_offset)
+        byte_str = string_to_byte_string(event_data[3])
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    offset_events = data_block_offset
+
+    # Write event data
+    for i, event_data in enumerate(events):
+        # event_type
+        byte_arr += struct.pack("I", event_data[0])
+        # time
+        byte_arr += struct.pack("f", event_data[1])
+        # offset_param_str
+        byte_arr += struct.pack("i", event_str_offsets[i])
+        # 3*4 = 12
+        data_block_offset += 12
+
+    bone_info_str_off = []
+
+    # Write all bone offset strings
+    for bone_info_data in bone_info:
+        bone_info_str_off.append(data_block_offset)
+        byte_str = string_to_byte_string(bone_info_data[0])
+        byte_arr += byte_str
+
+        data_block_offset += len(byte_str)
+
+    offset_bone_info = data_block_offset
+
+    # Write all bone info data
+    for i, bone_info_data in enumerate(bone_info):
+        # offset_name
+        byte_arr += struct.pack("I", bone_info_str_off[i])
+        # src_length
+        byte_arr += struct.pack("f", bone_info_data[1])
+        data_block_offset += 8
+
+    offset_bone_translate = data_block_offset
+
+    # Write all bone translate data
+    for trans_data in bone_translate:
+        # bone_index
+        byte_arr += struct.pack("H", trans_data[0])
+        # reserved
+        byte_arr += struct.pack("H", trans_data[1])
+        # translate
+        for i in range(3):
+            translate = trans_data[2]
+            byte_arr += struct.pack("f", translate[i])
+        # 2*2 + 3*4
+        data_block_offset += 16
+
+    offset_bone_rotate = data_block_offset
+
+    # Write all bone translate data
+    for rot_data in bone_rotate:
+        # bone_index
+        byte_arr += struct.pack("H", rot_data[0])
+        # roll
+        byte_arr += struct.pack("h", rot_data[1])
+        # pitch
+        byte_arr += struct.pack("h", rot_data[2])
+        # yaw
+        byte_arr += struct.pack("h", rot_data[3])
+        # 4*2
+        data_block_offset += 8
+
+    offset_bone_scale = data_block_offset
+
+    # Write all bone translate data
+    for scale_data in bone_scale:
+        # bone_index
+        byte_arr += struct.pack("H", scale_data[0])
+        # reserved
+        byte_arr += struct.pack("H", scale_data[1])
+        # scale
+        for i in range(3):
+            scale = scale_data[2]
+            byte_arr += struct.pack("f", scale[i])
+        # 2*2 + 3*4
+        data_block_offset += 16
+
+    seq_info_bytes = b''
+
+    seq_info_bytes += struct.pack("f", play_rate)
+
+    seq_info_bytes += struct.pack("I", len(frames))
+    seq_info_bytes += struct.pack("I", offset_frames)
+
+    seq_info_bytes += struct.pack("I", len(events))
+    seq_info_bytes += struct.pack("I", offset_events)
+
+    seq_info_bytes += struct.pack("I", len(bone_info))
+    seq_info_bytes += struct.pack("I", offset_bone_info)
+
+    seq_info_bytes += struct.pack("I", len(bone_translate))
+    seq_info_bytes += struct.pack("I", offset_bone_translate)
+
+    seq_info_bytes += struct.pack("I", len(bone_rotate))
+    seq_info_bytes += struct.pack("I", offset_bone_rotate)
+
+    seq_info_bytes += struct.pack("I", len(bone_scale))
+    seq_info_bytes += struct.pack("I", offset_bone_scale)
+
+    info_offset = 13*4
+    # The cpj header is 20 bytes (5*4)
+    name_offset = 20 + info_offset
+
+    # We already took into account the offset of these info variables at the start of the function
+    data_len = data_block_offset + info_offset
+
+    seq_header_byte_arr = create_cpj_chunk_header_byte_array(CPJ_SEQ_MAGIC, data_len, CPJ_SEQ_VERSION, name_offset)
+    byte_arr = seq_header_byte_arr + seq_info_bytes + byte_arr
+
+    # Sanity check
+    if (len(byte_arr) != data_len + 20):
+        print("Got " + str(len(byte_arr)) + " but calcuated size is " + str(data_len + 20))
+        raise ValueError("The calculated byte lenght of the array doesn't match up with the actual size!")
+
+    return byte_arr
 
 CPJ_SKL_MAGIC = "SKLB"
 CPJ_SKL_VERSION = 1
