@@ -42,13 +42,13 @@ def load(context, filepath):
     cpj_data = load_cpj_data(filepath)
 
     # Load in all geometry data
-    # TODO load in more that one GEO entry if there are any
+    # TODO load in more than one GEO entry if there are any
     geo_data = Geo.from_bytes(cpj_data["GEOB"][0])
 
     bl_object = load_geo(geo_data)
 
     # Load in all surface data
-    # TODO load in more that one SRF entry if there are any
+    # TODO load in more than one SRF entry if there are any
     srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
 
     load_srf(srf_data, bl_object)
@@ -83,9 +83,13 @@ def load_geo(geo_data):
     # Create a list of mesh faces
     bl_faces = []
     for tri in tris:
-        e0 = tri.edge_ring[0]
+
+        # Do the reverse winding of the triangle here as otherwise the triangles will
+        # become inverted because we convert the vertex coordinates to the Blender
+        # coordinate system.
+        e0 = tri.edge_ring[2]
         e1 = tri.edge_ring[1]
-        e2 = tri.edge_ring[2]
+        e2 = tri.edge_ring[0]
 
         v0 = edges[e0].tail_vertex
         v1 = edges[e1].tail_vertex
