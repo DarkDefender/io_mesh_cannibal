@@ -45,13 +45,13 @@ def load(context, filepath):
     # TODO load in more than one GEO entry if there are any
     geo_data = Geo.from_bytes(cpj_data["GEOB"][0])
 
-    bl_object = load_geo(geo_data)
+    mesh_data = load_geo(geo_data)
 
     # Load in all surface data
     # TODO load in more than one SRF entry if there are any
     srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
 
-    load_srf(srf_data, bl_object)
+    load_srf(srf_data, mesh_data)
 
     # Load Model Actor Configuation data
     mac_data = Mac.from_bytes(cpj_data["MACB"][0])
@@ -62,9 +62,6 @@ def load(context, filepath):
 
 # Load mesh geometry data into Blender.
 def load_geo(geo_data):
-    # TODO this currently only load the basic triangle mesh
-    # This doesn't respect any other data from the geometry data structure currently.
-
     verts = geo_data.data_block.vertices
     vert_len = len(verts)
 
@@ -108,16 +105,26 @@ def load_geo(geo_data):
     scene = bpy.context.scene
     scene.collection.objects.link(obj)
 
-    return obj
+    # Create custom data layer for vertices
+    # They only have one flag (LODLOCK) so store this as a boolean
+    lod_lock_layer = mesh_data.attributes.new("LOD_lock", 'BOOLEAN', 'POINT')
+
+    for i, vert in enumerate(verts):
+        # As 'flags' can only be 0 or 1, we don't need to do any type casting
+        lod_lock_layer.data[i].value = vert.flags
+
+    # TODO load mount points with empties
+
+    return mesh_data
 
 # Load mesh texture and UV data into Blender.
-def load_srf(srf_data, bl_object):
+def load_srf(srf_data, mesh_data):
     # Create new empty UV layer
-    bl_uv_layer = bl_object.data.uv_layers.new(name="cpj_uv", do_init=False)
+    bl_uv_layer = mesh_data.uv_layers.new(name="cpj_uv", do_init=False)
 
     # Init BMesh with our existing object mesh
     bm = bmesh.new()
-    bm.from_mesh(bl_object.data)
+    bm.from_mesh(mesh_data)
     bm.faces.ensure_lookup_table()
     uv = bm.loops.layers.uv[0]
 
@@ -135,7 +142,7 @@ def load_srf(srf_data, bl_object):
         col = colorsys.hls_to_rgb(h_val % 1.0, 0.6, 0.8)
         mat = bpy.data.materials.new(name=tex.name)
         mat.diffuse_color = (col[0], col[1], col[2], 1.0)
-        bl_object.data.materials.append(mat)
+        mesh_data.materials.append(mat)
         # TODO use tex.ref_name to look up the image texture
         h_val += 0.1
 
@@ -143,9 +150,7 @@ def load_srf(srf_data, bl_object):
     uvs = srf_data.data_block.uvs
 
     # Create the UV map
-    for i in range(len(tris)):
-        tri = tris[i]
-
+    for i, tri in enumerate(tris):
         uv0_idx = tri.uv_index[0]
         uv1_idx = tri.uv_index[1]
         uv2_idx = tri.uv_index[2]
@@ -164,8 +169,33 @@ def load_srf(srf_data, bl_object):
     # TODO handle the flags, smoothing groups, alpha level, and glaze data stored in the triangle srf data.
 
     # Update our object mesh
-    bm.to_mesh(bl_object.data)
+    bm.to_mesh(mesh_data)
     bm.free()
+
+    # Create custom data layers for the triangles
+    mesh_data.attributes.new("flags", 'INT', 'FACE')
+    mesh_data.attributes.new("smooth_group", 'INT8', 'FACE')
+    mesh_data.attributes.new("alpha_level", 'INT8', 'FACE')
+    mesh_data.attributes.new("glaze_index", 'INT8', 'FACE')
+    # The glaze func only have one enum value so we can reprecent this as a bool
+    mesh_data.attributes.new("glaze_func", 'BOOLEAN', 'FACE')
+
+    # NOTE: We are not using the return values from the .new functions as there
+    # currently a bug in Blender that makes them invalid if the attribute layer
+    # array is re-allocated when adding new layers
+
+    flags_layer = mesh_data.attributes["flags"]
+    smooth_group_layer = mesh_data.attributes["smooth_group"]
+    alpha_level_layer = mesh_data.attributes["alpha_level"]
+    glaze_index_layer = mesh_data.attributes["glaze_index"]
+    glaze_func_layer = mesh_data.attributes["glaze_func"]
+
+    for i, tri in enumerate(tris):
+        flags_layer.data[i].value = tri.flags
+        smooth_group_layer.data[i].value = tri.smooth_group
+        alpha_level_layer.data[i].value = tri.alpha_level
+        glaze_index_layer.data[i].value = tri.glaze_tex_index
+        glaze_func_layer.data[i].value = tri.glaze_func
 
 def load_mac(mac_data):
     # TODO handle sections
