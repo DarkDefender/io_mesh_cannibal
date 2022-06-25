@@ -31,6 +31,7 @@ sys.path.append(os.path.dirname(__file__))
 from cpj_utils import *
 from formats.geo import Geo
 from formats.srf import Srf
+from formats.skl import Skl
 from formats.mac import Mac
 
 # ----------------------------------------------------------------------------
@@ -52,6 +53,13 @@ def load(context, filepath):
     srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
 
     load_srf(srf_data, bl_object)
+
+    # Load in all surface data
+    # TODO load in more that one SKL entry if there are any
+    # And the rest of it lol
+    skl_data = Skl.from_bytes(cpj_data["SKLB"][0])
+
+    load_skl(skl_data, bl_object)
 
     # Load Model Actor Configuation data
     mac_data = Mac.from_bytes(cpj_data["MACB"][0])
@@ -162,6 +170,64 @@ def load_srf(srf_data, bl_object):
     # Update our object mesh
     bm.to_mesh(bl_object.data)
     bm.free()
+
+# Load skeleton bones as blender armatures
+def load_skl(skl_data, bl_object):
+    # Data has location of bones
+    # Zeddb (wisely) advises two passes:
+    # Pass 1: create bones and set their parents
+    # Pass 2: transform the bones
+    # This is because  bones in cpj data have parent-sensitive transforms.
+
+    # skl.yaml is the KaiTai parser source
+    indexToBoneName = {}
+
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+    ob_armature = bpy.context.active_object # Should I use bl_object?
+    edit_bones = ob_armature.data.edit_bones
+
+    # This entire scheme assumes the indexes in createdBones,
+    # obArmature.pose.bones, and boneData.parent_index all point
+    # to the same bone. Which they should. Yeah.
+
+    created_bones = []
+    bone_datas = skl_data.data_block.bones
+
+    # Pass 1: Create bones
+    for bone_data in bone_datas:
+        working_bone = edit_bones.new(bone_data.name)
+        working_bone.head = (0, 1, 2)   # do these head and tail
+        working_bone.tail = (1, 2, 3)   # values matter? Like, does
+                                        # Location in bose change them?
+        created_bones.append(working_bone)
+
+    # Pass 2: Set bone parents 
+    for bone_index in range(len(bone_datas)):
+        bone_data = bone_datas[bone_index]
+        bone = created_bones[bone_index]
+        bone.parent = edit_bones[bone_data.parent_name]
+
+    # Pass 3: Transform bones
+    for bone_index in range(len(bone_datas)):
+        pose_bone = ob_armature.pose.bones[bone_index]
+        bone_data = bone_datas[bone_index]
+
+        # might need to change head and tail locations first
+        # If we assume 
+        
+        bone_trans = bone_data.base_translate
+        pose_bone.location = [bone_trans.x, bone_trans.z, bone_trans.y]
+
+        # Is this legal?
+        pose_bone.rotation_quaternion = bone_data.base_rotate
+
+        pose_bone.scale = bone_data.base_scale
+
+    # Finally, set current pose as rest pose
+    bpy.ops.pose.armature_apply(selected=False)
+
+    # Then potentially add verticies, weights, and mount points.
+
 
 def load_mac(mac_data):
     # TODO handle sections
