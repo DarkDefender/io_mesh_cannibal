@@ -41,11 +41,19 @@ def load(context, filepath):
 
     cpj_data = load_cpj_data(filepath)
 
+    if len(cpj_data["GEOB"]) > 1:
+        raise Exception('Importing cpjs with more than one mesh in it is not supported yet')
+        return {'CANCELLED'}
+
     # Load in all geometry data
     # TODO load in more than one GEO entry if there are any
     geo_data = Geo.from_bytes(cpj_data["GEOB"][0])
 
     mesh_data = load_geo(geo_data)
+
+    if len(cpj_data["SRFB"]) > 1:
+        raise Exception('Importing cpjs with more than one surface in it is not supported yet')
+        return {'CANCELLED'}
 
     # Load in all surface data
     # TODO load in more than one SRF entry if there are any
@@ -59,6 +67,25 @@ def load(context, filepath):
     load_mac(mac_data)
 
     return {'FINISHED'}
+
+def create_custom_data_layers(mesh_data):
+    # NOTE: We are not using the return values from the .new functions as there
+    # currently a bug/quirk in Blender that makes them invalid if the attribute
+    # layer array is re-allocated when adding new layers
+
+    # Create custom data layer for vertices
+    # They only have one flag (LODLOCK) so this is essentially a boolean
+    mesh_data.attributes.new("lod_lock", 'INT', 'POINT')
+    # This seems to be used to setup vertex data compression for vertex animations (FRM)
+    mesh_data.attributes.new("frm_group_index", 'INT', 'POINT')
+
+    # Create custom data layers for the triangles
+    mesh_data.attributes.new("flags", 'INT', 'FACE')
+    mesh_data.attributes.new("smooth_group", 'INT', 'FACE')
+    mesh_data.attributes.new("alpha_level", 'INT', 'FACE')
+    mesh_data.attributes.new("glaze_index", 'INT', 'FACE')
+    # The glaze func only have one enum value so this is actually just a boolean
+    mesh_data.attributes.new("glaze_func", 'INT', 'FACE')
 
 # Load mesh geometry data into Blender.
 def load_geo(geo_data):
@@ -105,13 +132,15 @@ def load_geo(geo_data):
     scene = bpy.context.scene
     scene.collection.objects.link(obj)
 
-    # Create custom data layer for vertices
-    # They only have one flag (LODLOCK) so store this as a boolean
-    lod_lock_layer = mesh_data.attributes.new("LOD_lock", 'BOOLEAN', 'POINT')
+    create_custom_data_layers(mesh_data)
+
+    lod_lock_layer = mesh_data.attributes["lod_lock"]
+    group_index_layer = mesh_data.attributes["frm_group_index"]
 
     for i, vert in enumerate(verts):
         # As 'flags' can only be 0 or 1, we don't need to do any type casting
         lod_lock_layer.data[i].value = vert.flags
+        group_index_layer.data[i].value = vert.group_index
 
     # TODO load mount points with empties
 
@@ -166,23 +195,9 @@ def load_srf(srf_data, mesh_data):
         # set material index
         bm.faces[i].material_index = tri.tex_index
 
-    # TODO handle the flags, smoothing groups, alpha level, and glaze data stored in the triangle srf data.
-
     # Update our object mesh
     bm.to_mesh(mesh_data)
     bm.free()
-
-    # Create custom data layers for the triangles
-    mesh_data.attributes.new("flags", 'INT', 'FACE')
-    mesh_data.attributes.new("smooth_group", 'INT8', 'FACE')
-    mesh_data.attributes.new("alpha_level", 'INT8', 'FACE')
-    mesh_data.attributes.new("glaze_index", 'INT8', 'FACE')
-    # The glaze func only have one enum value so we can reprecent this as a bool
-    mesh_data.attributes.new("glaze_func", 'BOOLEAN', 'FACE')
-
-    # NOTE: We are not using the return values from the .new functions as there
-    # currently a bug in Blender that makes them invalid if the attribute layer
-    # array is re-allocated when adding new layers
 
     flags_layer = mesh_data.attributes["flags"]
     smooth_group_layer = mesh_data.attributes["smooth_group"]
