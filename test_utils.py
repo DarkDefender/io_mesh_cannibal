@@ -139,11 +139,20 @@ def round_trip_lod_data(lod_data):
 
 def round_trip_mac_data(mac_data):
     # construct a mac information data list
+    section_data = []
     command_strings = []
+    for sec in mac_data.data_block.sections:
+        sec_data = []
+        sec_data.append(sec.name)
+        sec_data.append(sec.num_commands)
+        sec_data.append(sec.first_command)
+
+        section_data.append(sec_data)
+
     for com in mac_data.data_block.commands:
         command_strings.append(com.command_str)
 
-    mac_byte_data = create_mac_byte_array(mac_data.name, command_strings)
+    mac_byte_data = create_mac_byte_array(mac_data.name, section_data, command_strings)
 
     return mac_byte_data
 

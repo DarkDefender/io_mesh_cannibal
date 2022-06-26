@@ -23,11 +23,6 @@ import colorsys
 import bpy
 import bmesh
 
-import os, sys
-
-# Add the current directory to the search path so our local imports will work
-sys.path.append(os.path.dirname(__file__))
-
 from cpj_utils import *
 from formats.geo import Geo
 from formats.srf import Srf
@@ -149,13 +144,13 @@ def load_geo(geo_data):
 # Load mesh texture and UV data into Blender.
 def load_srf(srf_data, mesh_data):
     # Create new empty UV layer
-    bl_uv_layer = mesh_data.uv_layers.new(name="cpj_uv", do_init=False)
+    bl_uv_layer = mesh_data.uv_layers.new(name=srf_data.name, do_init=False)
 
     # Init BMesh with our existing object mesh
     bm = bmesh.new()
     bm.from_mesh(mesh_data)
     bm.faces.ensure_lookup_table()
-    uv = bm.loops.layers.uv[0]
+    uv_layer = bm.loops.layers.uv[0]
 
     # Sanity check
     if srf_data.num_tris != len(bm.faces):
@@ -172,7 +167,9 @@ def load_srf(srf_data, mesh_data):
         mat = bpy.data.materials.new(name=tex.name)
         mat.diffuse_color = (col[0], col[1], col[2], 1.0)
         mesh_data.materials.append(mat)
-        # TODO use tex.ref_name to look up the image texture
+        if tex.ref_name:
+            # TODO use tex.ref_name to look up the image texture
+            mat["CPJ texture ref"] = tex.ref_name
         h_val += 0.1
 
     tris = srf_data.data_block.tris
@@ -188,9 +185,9 @@ def load_srf(srf_data, mesh_data):
         uv1 = (uvs[uv1_idx].u, 1.0 - uvs[uv1_idx].v)
         uv2 = (uvs[uv2_idx].u, 1.0 - uvs[uv2_idx].v)
 
-        bm.faces[i].loops[0][uv].uv = uv0
-        bm.faces[i].loops[1][uv].uv = uv1
-        bm.faces[i].loops[2][uv].uv = uv2
+        bm.faces[i].loops[0][uv_layer].uv = uv0
+        bm.faces[i].loops[1][uv_layer].uv = uv1
+        bm.faces[i].loops[2][uv_layer].uv = uv2
 
         # set material index
         bm.faces[i].material_index = tri.tex_index
@@ -213,13 +210,18 @@ def load_srf(srf_data, mesh_data):
         glaze_func_layer.data[i].value = tri.glaze_func
 
 def load_mac(mac_data):
-    # TODO handle sections
-    # mac_data.data_block.sections[0]
+    # TODO mac data loading correctly
 
-    # TODO actually act on the data stored here so we set the origin and scale of the object etc etc...
+    mac_text = bpy.data.texts.new("cpj_" + mac_data.name)
+    for sec in mac_data.data_block.sections:
+        # Write section name start delimiter
+        mac_text.write("--- " + sec.name + "\n")
 
-    mac_text = bpy.data.texts.new("cbj_" + mac_data.name)
-
-    for com in mac_data.data_block.commands:
-        mac_text.write(com.command_str + "\n")
+        # TODO actually act on the data stored here so we set the origin and scale of the object etc etc...
+        # ONLY if the command section is "autoexec" though!!!
+        # The other sections we don't know what to do with. But they should be kept intact as per the format spec
+        start_com = sec.first_command
+        end_com = start_com + sec.num_commands
+        for com in mac_data.data_block.commands[start_com:end_com]:
+            mac_text.write(com.command_str + "\n")
 

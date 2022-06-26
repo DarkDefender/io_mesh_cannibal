@@ -24,44 +24,182 @@ import bpy
 
 import bmesh
 
+from cpj_utils import *
+
 # ----------------------------------------------------------------------------
 def save(context, filepath):
-    mesh_objs = []
-    for obj in bpy.context.scene.objects:
-        if obj.type == 'MESH':
-            mesh_objs.append(obj)
 
-
-    if len(mesh_objs) > 1:
-        raise Exception('Exporting cpjs with more than one mesh object in it is not supported yet')
-        return {'CANCELLED'}
+    apply_modifiers = True
 
     data_chunks = []
 
-    for obj in mesh_objs:
+    objs_to_process = []
+
+    for text_block in bpy.data.texts:
+        if text_block.name.startswith("cpj_"):
+            mac_name = text_block.name[4:]
+            mac_data = parse_mac_text(mac_name, text_block.as_string(), text_block.name)
+            data_chunks.append(mac_data[0])
+            objs_to_process.append(mac_data[1:])
+
+    for obj_data in objs_to_process:
+        obj = bpy.data.objects[obj_data[0]]
         if apply_modifiers:
             depsgraph = context.evaluated_depsgraph_get()
-            me = ob.evaluated_get(depsgraph).to_mesh()
+            me = obj.evaluated_get(depsgraph).to_mesh()
         else:
-            me = ob.to_mesh()
+            me = obj.to_mesh()
 
         bm = bmesh.new()
         bm.from_mesh(me)
-        data_chunks += create_geo_data(bm, True)
-        data_chunks += create_srf_data(bm)
+
+        # The cpj format only supports triangles, so ensure that everything is triangulated
+        bmesh.ops.triangulate(bm, faces=bm.faces)
+        loops = sum(bm.calc_loop_triangles(),())
+
+        data_chunks.append(create_geo_data(me.name, bm, loops, True))
+
+        if len(obj_data[1]) > 1:
+            raise Exception("Can't handle more that one SRF layer on a mesh currently")
+
+        for uv_name in obj_data[1]:
+            data_chunks.append(create_srf_data(obj, uv_name, bm, loops))
         bm.free()
 
         if apply_modifiers:
-            ob.evaluated_get(depsgraph).to_mesh_clear()
+            obj.evaluated_get(depsgraph).to_mesh_clear()
         else:
-            me = ob.to_mesh_clear()
+            me = obj.to_mesh_clear()
+
+    write_cpj_file(filepath, data_chunks)
 
     return {'FINISHED'}
 
-def create_geo_data(bm, apply_modifiers):
-    # The cpj format only supports triangles to ensure that everything is triangulated
-    loops = bmesh.ops.triangulate(bm, faces=bm.faces)
+def parse_mac_text(mac_name, mac_text, text_block_name):
+    # Split up the commands into a list
+    command_list = mac_text.splitlines()
+    # If there are multiple newlines after each other we will have empty commands, filter those out
+    command_list = list(filter(None, command_list))
+    list_size = len(command_list)
 
+    if list_size == 0:
+        raise Exception("Invalid MAC text command file supplied: " + text_block_name)
+
+    # Data for the mac byte data creator
+    section_data = []
+    command_strings = []
+
+    command_index = 0
+    list_index = 0
+
+    mesh_object_name = ""
+    uv_names = []
+    found_primary_uv = False
+    has_frames = False
+    has_seq = False
+    has_author = False
+    has_descripton = False
+
+    valid_autoexec_commands = ["SetAuthor", "SetDescription", "SetGeometry", "SetLodData", "SetSkeleton", "SetSurface", "AddFrames", "AddSequences"]
+    # TODO remake this list to be exclusive, IE whick types NOT to check when automatic origin and scale etc writing is implemented
+    quote_check = ["SetAuthor", "SetDescription", "SetGeometry", "SetLodData", "SetSkeleton", "AddFrames", "AddSequences"]
+
+    # Go through all command sections
+    while list_index < list_size:
+        section_name = command_list[list_index].split()
+
+        if len(section_name) != 2 and section_name[0] != "---":
+            raise Exception("Invalid section in MAC text command file: " + text_block_name)
+
+        list_index +=1
+
+        num_commands = 0
+        first_command = command_index
+
+        # Go trough all of the commands in this section
+        while list_index < list_size:
+            command = command_list[list_index]
+            if command.startswith("---"):
+                # New command section
+                break
+
+            if section_name[1] == "autoexec":
+                com = command.split()
+
+                # TODO uncomment this once we have automatic Origin, scale etc implemented
+                #if not com[0] in valid_autoexec_commands:
+                #    raise Exception(command + " is not a valid autoexec command!")
+
+                if len(com) < 2:
+                    raise Exception("Too few arguments for command in MAC text command file: " + text_block_name + "\n Command was: " + command)
+
+                if com[0] in quote_check:
+                    if not (com[1].startswith('"') and com[1].endswith('"')):
+                        raise Exception("Error in: " + text_block_name + "\n" + com[0] + " requires the string argument to be in quotation marks")
+
+                match com[0]:
+                    case "SetGeometry":
+                        mesh_object_name = com[1].strip('"')
+                        if not mesh_object_name in bpy.data.objects:
+                            raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object_name + " does not exist")
+                        if bpy.data.objects[mesh_object_name].type != 'MESH':
+                            raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object_name + " is not a mesh" )
+                        # TODO write in all the special sections like Orgin, Scale, boundingboxes etc.
+                    case "SetSurface":
+                        if len(com) < 3:
+                            raise Exception("Error in: " + text_block_name + "\n 'SetSurface' requires two arguments. Index and uv name")
+                        if not com[1].isnumeric():
+                            raise Exception("Error in: " + text_block_name + "\n 'SetSurface', the first argument has to be number")
+                        if not (com[2].startswith('"') and com[2].endswith('"')):
+                            raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' requires the object name to be in quotation marks")
+
+                        if com[1] == "0":
+                            found_primary_uv = True
+                        uv_names.append(com[2].strip('"'))
+                    case "SetAuthor":
+                        has_author = True
+                    case "SetDescription":
+                        has_descripton = True
+                    case "AddFrames":
+                        has_frames = True
+                    case "AddSequences":
+                        has_seq = True
+
+            command_strings.append(command)
+
+            num_commands += 1
+            list_index +=1
+            command_index += 1
+
+        sec_data = [section_name[1], num_commands, first_command]
+        section_data.append(sec_data)
+
+    # Sanity checks
+    if mesh_object_name == "":
+        raise Exception("No mesh object specified in MAC text command file: " + text_block_name)
+
+    if len(uv_names) == 0:
+        raise Exception("No UV was specified in MAC text command file: " + text_block_name)
+    if not found_primary_uv:
+        raise Exception("No primary UV was specified in MAC test command file: " + text_block_name)
+    for uv_name in uv_names:
+        if not uv_name in bpy.data.objects[mesh_object_name].data.uv_layers:
+            raise Exception(uv_name + " does not exist on the specifed mesh object in MAC command file: " + text_block_name)
+
+    if not has_frames:
+        raise Exception("'AddFrames' was not specified in MAC text command file: " + text_block_name)
+    if not has_seq:
+        raise Exception("'AddSequences' was not specified in MAC text command file: " + text_block_name)
+    if not has_author:
+        raise Exception("'SetAuthor' was not specified in MAC text command file: " + text_block_name)
+    if not has_descripton:
+        raise Exception("'SetDescription' was not specified in MAC text command file: " + text_block_name)
+
+    mac_byte_data = create_mac_byte_array(mac_name, section_data, command_strings)
+
+    return (mac_byte_data, mesh_object_name, uv_names)
+
+def create_geo_data(geo_name, bm, loops, apply_modifiers):
     # Ensure all indices are valid and up to date
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
@@ -77,8 +215,8 @@ def create_geo_data(bm, apply_modifiers):
     mounts = []
     obj_links = []
 
-    flags_layer = bl.verts.layers.int['lod_lock']
-    group_index_layer = bl.verts.layers.int['frm_group_index']
+    flags_layer = bm.verts.layers.int['lod_lock']
+    group_index_layer = bm.verts.layers.int['frm_group_index']
 
     for vert_data in bm.verts:
         vert = []
@@ -90,11 +228,11 @@ def create_geo_data(bm, apply_modifiers):
 
         # Save the start index that we wrote data to in obj_links
         vert.append(len(obj_links)) # first_edge_link
-        for loop in vert_data.link_loop:
+        for loop in vert_data.link_loops:
             obj_links.append(loop.index)
 
         vert.append(len(obj_links)) # first_tri_link
-        for face in vert_data.link_face:
+        for face in vert_data.link_faces:
             obj_links.append(face.index)
         # We need to flip the coordinate axis as Blender and CPJ doesn't use the same system
         vert.append((vert_data.co.x, vert_data.co.z, -vert_data.co.y)) # ref_pos
@@ -106,11 +244,11 @@ def create_geo_data(bm, apply_modifiers):
         edge.append(loop.link_loop_next.vert.index) # head_vertex
         edge.append(loop.vert.index) # tail_vertex
         edge.append(loop.link_loop_radial_next.index) # inverted edge
-        edge.append(loop.link_loops + 1) # num_tri_links
+        edge.append(len(loop.link_loops) + 1) # num_tri_links
         edge.append(len(obj_links)) # first_tri_link
 
         obj_links.append(loop.face.index)
-        for i in range(loop.link_loops):
+        for i in range(len(loop.link_loops)):
             loop = loop.link_loop_radial_next
             obj_links.append(loop.face.index)
 
@@ -119,7 +257,8 @@ def create_geo_data(bm, apply_modifiers):
     for tri_data in bm.faces:
         tri = []
         edge_ring = tri_data.loops
-        tri.append((edge_ring[0].index, edge_ring[1].index, edge_ring[2].index)) # edge_ring
+        # We need to reverse the winding to be able to properly transform into the CPJ coordinate system.
+        tri.append((edge_ring[2].index, edge_ring[1].index, edge_ring[0].index)) # edge_ring
         tri.append(0) # reserved, must be zero
 
         tris.append(tri)
@@ -140,38 +279,56 @@ def create_geo_data(bm, apply_modifiers):
 
     #    mounts.append(mount)
 
-    geo_byte_data = create_geo_byte_array(geo_data.name, verts, edges, tris, mounts, obj_links)
+    geo_byte_data = create_geo_byte_array(geo_name, verts, edges, tris, mounts, obj_links)
 
     return geo_byte_data
 
-def create_srf_data(bm):
+def create_srf_data(obj, uv_name, bm, loops):
+    # This should have already been checked in the MAC data parser, but can't hurt to be a bit paranoid
+    if not uv_name in bm.loops.layers.uv:
+        raise Exception("The specifed UV '" + uv_name + "' doesn't exist in object: " + obj.name )
+
     # construct srf data lists
     textures = []
     tris = []
     uv_coords = []
 
-    for tex_data in srf_data.data_block.textures:
-        # TODO check if ref_name is missing
-        tex = [tex_data.name, tex_data.ref_name]
+    # TODO this only works properly with UV mat.
+    # we don't know which textures to pull and we can't have mutiple data layers of the same name for the mesh.
+    for material in obj.data.materials:
+        ref_name = ""
+        if "CPJ texture ref" in material:
+            ref_name = material["CPJ texture ref"]
+        tex = [material.name, ref_name]
         textures.append(tex)
 
-    for tri_data in srf_data.data_block.tris:
+    flags_layer = bm.faces.layers.int['flags']
+    smooth_group_layer = bm.faces.layers.int['smooth_group']
+    alpha_level_layer = bm.faces.layers.int['alpha_level']
+    glaze_index_layer = bm.faces.layers.int['glaze_index']
+    glaze_func_layer = bm.faces.layers.int['glaze_func']
+
+    for tri_data in bm.faces:
         tri = []
-        uv_index = tri_data.uv_index
-        tri.append((uv_index[0], uv_index[1], uv_index[2]))
-        tri.append(tri_data.tex_index)
-        tri.append(tri_data.reserved)
-        tri.append(tri_data.flags)
-        tri.append(tri_data.smooth_group)
-        tri.append(tri_data.alpha_level)
-        tri.append(tri_data.glaze_tex_index)
-        tri.append(tri_data.glaze_func)
+        tri.append((tri_data.loops[0].index, tri_data.loops[1].index, tri_data.loops[2].index))
+        tri.append(tri_data.material_index)
+        tri.append(0) # reserved, must be zero
+        tri.append(tri_data[flags_layer])
+        tri.append(tri_data[smooth_group_layer])
+        tri.append(tri_data[alpha_level_layer])
+        tri.append(tri_data[glaze_index_layer])
+        tri.append(tri_data[glaze_func_layer])
 
         tris.append(tri)
 
-    for uv_data in srf_data.data_block.uvs:
-        uv_coords.append((uv_data.u, uv_data.v))
+    uv_layer = bm.loops.layers.uv[0]
 
-    srf_byte_data = create_srf_byte_array(srf_data.name, textures, tris, uv_coords)
+    for loop in loops:
+        uv = loop[uv_layer].uv
+        # The texture coordinate system is different in CPJ.
+        # The upper left corner is the origin point (instead of the bottom left as it is in Blender)
+        uv_coords.append((uv[0], 1.0 - uv[1]))
+
+    srf_byte_data = create_srf_byte_array(uv_name, textures, tris, uv_coords)
 
     return srf_byte_data
