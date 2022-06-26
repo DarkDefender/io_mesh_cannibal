@@ -22,6 +22,7 @@
 import struct
 import bpy
 
+from mathutils import Vector
 import bmesh
 
 from cpj_utils import *
@@ -332,3 +333,30 @@ def create_srf_data(obj, uv_name, bm, loops):
     srf_byte_data = create_srf_byte_array(uv_name, textures, tris, uv_coords)
 
     return srf_byte_data
+
+def calc_boundbox_max_min(obj):
+    # Ensure that the bounding box corners are in world space coordinates
+    bbox_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+
+    max_x = -float("inf")
+    min_x = float("inf")
+
+    max_y = -float("inf")
+    min_y = float("inf")
+
+    max_z = -float("inf")
+    min_z = float("inf")
+
+    for corner in bbox_corners:
+        max_x = max(max_x, corner.x)
+        min_x = min(min_x, corner.x)
+        # Switch around coordinate system because it is different in CPJ
+        max_y = max(max_y, corner.z)
+        min_y = min(min_y, corner.z)
+        max_z = max(max_z, -corner.y)
+        min_z = min(min_z, -corner.y)
+
+    max_bb = [max_x, max_y, max_z]
+    min_bb = [min_x, min_y, min_z]
+
+    return max_bb, min_bb

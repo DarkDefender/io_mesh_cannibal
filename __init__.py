@@ -21,10 +21,16 @@
 # ----------------------------------------------------------------------------
 import importlib
 import bpy
+import bmesh
+
+from bpy.types import (Panel, Operator)
 
 import os, sys
 # Add the current directory to the search path so our local imports will work
 sys.path.append(os.path.dirname(__file__))
+
+from import_cpj import create_custom_data_layers
+from export_cpj import calc_boundbox_max_min
 
 from bpy.props import (
     BoolProperty,
@@ -107,11 +113,108 @@ def menu_func_import(self, context):
 def menu_func_export(self, context):
     self.layout.operator(ExportCPJ.bl_idname, text="Cannibal Project (.cpj)")
 
+# ----------------------------------------------------------------------------
+class CPJ_InitOperator(Operator):
+    """Initialize CPJ variables on active object"""
+    bl_idname = "object.cpj_init"
+    bl_label = "CPJ data init Operator"
+
+    def execute(self, context):
+        obj = context.object
+
+        if obj.type != 'MESH':
+            raise Exception("Must be a mesh object")
+        create_custom_data_layers(obj.data)
+
+        mac_text_name = "cpj_" + obj.name
+        text_block = bpy.data.texts.new(mac_text_name)
+        text_block.write("--- autoexec\n")
+        text_block.write('SetAuthor "Unknown"\n')
+        text_block.write('SetDescription "None"\n')
+        # TODO These should be set automatically when exporting
+        text_block.write('SetOrigin 0.000000 0.000000 0.000000\n')
+        text_block.write('SetScale 1.000000 1.000000 1.000000\n')
+        text_block.write('SetRotation 0.000000 0.000000 0.000000\n')
+        max_bb, min_bb = calc_boundbox_max_min(obj)
+        text_block.write(f'SetBoundsMin {min_bb[0]:.6f} {min_bb[1]:.6f} {min_bb[2]:.6f}\n')
+        text_block.write(f'SetBoundsMax {max_bb[0]:.6f} {max_bb[1]:.6f} {max_bb[2]:.6f}\n')
+
+        text_block.write('SetGeometry "' + obj.name + '"\n')
+        text_block.write('SetSurface 0 "' + obj.data.uv_layers[0].name + '"\n')
+        text_block.write('AddFrames "NULL"\n')
+        text_block.write('AddSequences "NULL"\n')
+
+        return {'FINISHED'}
+
+class CPJ_DoubleOperator(Operator):
+    """Mark selected faces as double sided"""
+    bl_idname = "object.cpj_selected_as_double"
+    bl_label = "CPJ mark faces as double sided"
+
+    def execute(self, context):
+        obj = context.object
+
+        if obj.type != 'MESH':
+            raise Exception("Must be a mesh object")
+        # assuming the object is currently in Edit Mode.
+        me = obj.data
+        bm = bmesh.from_edit_mesh(me)
+
+        flags_layer = bm.faces.layers.int['flags']
+
+        for f in bm.faces:
+            if f.select:
+                f[flags_layer] = 0x40 # Set two sided flag
+
+        # Show the updates in the viewport
+        # and recalculate n-gon tessellation.
+        bmesh.update_edit_mesh(me)
+
+        return {'FINISHED'}
+
+# ----------------------------------------------------------------------------
+class OBJ_PT_panel(bpy.types.Panel):
+    bl_label = "CPJ helper operators"
+    bl_category = "CPJ Utils"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_context = "objectmode"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.label(text="Operators:")
+
+        col = layout.column(align=True)
+        col.operator(CPJ_InitOperator.bl_idname, text="Initialize CPJ for object", icon="CONSOLE")
+
+        layout.separator()
+
+class EDIT_PT_panel(bpy.types.Panel):
+    bl_label = "CPJ helper operators"
+    bl_category = "CPJ Utils"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_context = "mesh_edit"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.label(text="Operators:")
+
+        col = layout.column(align=True)
+        col.operator(CPJ_DoubleOperator.bl_idname, text="Selected as Double Sided")
+
+        layout.separator()
 
 # ----------------------------------------------------------------------------
 classes = {
     ImportCPJ,
     ExportCPJ,
+    OBJ_PT_panel,
+    EDIT_PT_panel,
+    CPJ_InitOperator,
+    CPJ_DoubleOperator,
 }
 
 
