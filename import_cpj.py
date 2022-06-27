@@ -177,9 +177,10 @@ def load_srf(srf_data, mesh_data):
 
     # Create the UV map
     for i, tri in enumerate(tris):
-        uv0_idx = tri.uv_index[0]
+        # This is reversing the loop because we reversed the vertex loop order for the geometry itself as well
+        uv0_idx = tri.uv_index[2]
         uv1_idx = tri.uv_index[1]
-        uv2_idx = tri.uv_index[2]
+        uv2_idx = tri.uv_index[0]
 
         uv0 = (uvs[uv0_idx].u, 1.0 - uvs[uv0_idx].v)
         uv1 = (uvs[uv1_idx].u, 1.0 - uvs[uv1_idx].v)

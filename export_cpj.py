@@ -311,7 +311,8 @@ def create_srf_data(obj, uv_name, bm, loops):
 
     for tri_data in bm.faces:
         tri = []
-        tri.append((tri_data.loops[0].index, tri_data.loops[1].index, tri_data.loops[2].index))
+        # We need to reverse the winding to be able to properly transform into the CPJ coordinate system.
+        tri.append((tri_data.loops[2].index, tri_data.loops[1].index, tri_data.loops[0].index))
         tri.append(tri_data.material_index)
         tri.append(0) # reserved, must be zero
         tri.append(tri_data[flags_layer])
