@@ -24,6 +24,8 @@ import bpy
 import bmesh
 
 from cpj_utils import *
+
+from formats.frm import Frm
 from formats.geo import Geo
 from formats.srf import Srf
 from formats.mac import Mac
@@ -44,7 +46,7 @@ def load(context, filepath):
     # TODO load in more than one GEO entry if there are any
     geo_data = Geo.from_bytes(cpj_data["GEOB"][0])
 
-    mesh_data = load_geo(geo_data)
+    obj = load_geo(geo_data)
 
     if len(cpj_data["SRFB"]) > 1:
         raise Exception('Importing cpjs with more than one surface in it is not supported yet')
@@ -54,7 +56,13 @@ def load(context, filepath):
     # TODO load in more than one SRF entry if there are any
     srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
 
-    load_srf(srf_data, mesh_data)
+    load_srf(srf_data, obj.data)
+
+    # Load vertex animation data as shape keys
+    # TODO load in more than one FRM entry if there are any
+    frm_data = Frm.from_bytes(cpj_data["FRMB"][0])
+
+    load_frm(frm_data, obj)
 
     # Load Model Actor Configuation data
     mac_data = Mac.from_bytes(cpj_data["MACB"][0])
@@ -62,6 +70,45 @@ def load(context, filepath):
     load_mac(mac_data)
 
     return {'FINISHED'}
+
+def load_frm(frm_data, obj):
+    verts = obj.data.vertices
+
+    # TODO import all frames and update this function to support this
+    sk_basis = obj.shape_key_add(name='Basis')
+    sk_basis.interpolation = 'KEY_LINEAR'
+    obj.data.shape_keys.use_relative = False
+
+    for frame in frm_data.data_block.frames:
+        # Create new shape key
+        sk = obj.shape_key_add(name=frame.name)
+        sk.interpolation = 'KEY_LINEAR'
+
+        uses_group_compression = (frame.num_groups != 0)
+
+        pos = [0.0]*3
+
+        for i, vert in enumerate(frame.verts):
+            if uses_group_compression:
+                group_data = frame.groups[vert.group]
+                byte_pos = vert.pos
+                byte_pos[0] *= group_data.byte_scale.x
+                byte_pos[1] *= group_data.byte_scale.y
+                byte_pos[2] *= group_data.byte_scale.z
+
+                byte_pos[0] += group_data.byte_translate.x
+                byte_pos[1] += group_data.byte_translate.y
+                byte_pos[2] += group_data.byte_translate.z
+
+                pos = byte_pos
+            else:
+                pos = vert.pos
+
+            # position each vert
+            sk.data[i].co.x = pos[0]
+            sk.data[i].co.y = -pos[2]
+            sk.data[i].co.z = pos[1]
+
 
 def create_custom_data_layers(mesh_data):
     # NOTE: We are not using the return values from the .new functions as there
@@ -91,6 +138,7 @@ def load_geo(geo_data):
 
     for vert in verts:
         ref = vert.ref_pos
+        # Convert the vertex position into the correct transformation space for Blender
         cpj_verts.append((ref.x, -ref.z, ref.y))
 
     edges = geo_data.data_block.edges
@@ -139,7 +187,7 @@ def load_geo(geo_data):
 
     # TODO load mount points with empties
 
-    return mesh_data
+    return obj
 
 # Load mesh texture and UV data into Blender.
 def load_srf(srf_data, mesh_data):
