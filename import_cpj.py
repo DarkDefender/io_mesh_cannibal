@@ -179,6 +179,9 @@ def load_skl(skl_data, bl_object):
     # Pass 2: transform the bones
     # This is because  bones in cpj data have parent-sensitive transforms.
 
+    # bl_object and ob_armature might refer to the same thing.
+    # If they do, prefer bl_object
+
     # skl.yaml is the KaiTai parser source
     indexToBoneName = {}
 
@@ -201,11 +204,18 @@ def load_skl(skl_data, bl_object):
                                         # Location in bose change them?
         created_bones.append(working_bone)
 
+        # apply vertex and weight?
+        # potentially yes. Vertex/ Vertex Groups are
+        # shared between data in cpj. Or, rather, Vertex[i] in the
+        # geo is Vertex[i] in the skl. So, if the geo already has
+        # vertex groups...
+
     # Pass 2: Set bone parents 
     for bone_index in range(len(bone_datas)):
-        bone_data = bone_datas[bone_index]
-        bone = created_bones[bone_index]
-        bone.parent = edit_bones[bone_data.parent_name]
+        if bone_index != -1: # -1 is root bone/no parent
+            bone_data = bone_datas[bone_index]
+            bone = created_bones[bone_index]
+            bone.parent = edit_bones[bone_data.parent_name]
 
     # Pass 3: Transform bones
     for bone_index in range(len(bone_datas)):
@@ -213,15 +223,50 @@ def load_skl(skl_data, bl_object):
         bone_data = bone_datas[bone_index]
 
         # might need to change head and tail locations first
-        # If we assume 
+        # If we assume that a bone's origin is its center,
+        # then the head and tail would be location +/- length/2
+        # in the direction of the rotation.
         
         bone_trans = bone_data.base_translate
-        pose_bone.location = [bone_trans.x, bone_trans.z, bone_trans.y]
+        pose_bone.location = [bone_trans.x, -bone_trans.z, bone_trans.y]
 
-        # Is this legal?
-        pose_bone.rotation_quaternion = bone_data.base_rotate
+        # Recreating quat in a way blender recognizes
+        pose_bone.rotation_quaternion = bpy.MathUtils.Quaternion(
+            bone_data.base_rotate.s,
+            bone_data.base_rotate.v.x,
+            bone_data.base_rotate.v.y,
+            bone_data.base_rotate.v.z
+        )
 
         pose_bone.scale = bone_data.base_scale
+
+    # Pass 4: Apply Vertex Groups and Weights
+    # This loop gets to be n^2 because it does 2 things
+    weight_shift = 0
+    vertex_data = skl_data.data_block.verts
+    weight_data = skl_data.data_block.weights
+    for vert_index in range(len(ob_armature.verticies)):
+        vertex = ob_armature.verticies[vert_index]
+        weight_range = range(
+                vert_index + weight_shift, 
+                vert_index + weight_shift + vertex_data[vert_index].num_weights)
+        for local_weight_index in weight_range:
+            group_index = local_weight_index - vert_index - weight_shift
+            # add group to vertex.groups
+            # index is the relative index of the weight
+            # groups might already exist? unsure, double-check importer
+            vertex.groups[group_index] = bpy.context.active_object.vertex_groups.new(
+                    name=f'{vert_index}-{group_index}')
+  
+            # set group weight to be weight_data[local_weight_index].weight_factor
+            vertex.groups[group_index].weight = weight_data[local_weight_index].weight_factor
+            
+            # somehow? add bone at 
+            #   edit_bones[weight_data[local_weight_index].bone_index] to the
+            #   vertex/group
+            # wait... is that even a thing? I'm not sure...
+            # And something might happen with weight_data[local_weight_index].offset_pos
+
 
     # Finally, set current pose as rest pose
     bpy.ops.pose.armature_apply(selected=False)
