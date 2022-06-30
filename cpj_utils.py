@@ -433,11 +433,10 @@ def create_lod_byte_array(name, levels, tris, vert_relay):
         raise ValueError("The calculated byte lenght of the array doesn't match up with the actual size!")
 
     return byte_arr
-    return
 
 CPJ_MAC_MAGIC = "MACB"
 CPJ_MAC_VERSION = 1
-def create_mac_byte_array(name, command_strings):
+def create_mac_byte_array(name, section_data, command_strings):
     byte_arr = b''
     # The start of the data block (not the chunk).
     data_block_offset = 0
@@ -450,11 +449,7 @@ def create_mac_byte_array(name, command_strings):
         data_block_offset += len(byte_str)
 
     # Write section data
-    # TODO for now we always assume that there is one section and that it is always "autoexec"
-    section_names = ["autoexec"]
-    num_sections = 1
-    sec_num_commands = len(command_strings)
-    first_sec_command = 0
+    section_names = [data[0] for data in section_data]
     sec_offset_names = []
 
     # Write all section name strings in a contious block
@@ -467,11 +462,13 @@ def create_mac_byte_array(name, command_strings):
 
     offset_sections = data_block_offset
     # Write all section data in a contious block
-    for i in range(num_sections):
-        # TODO currently this loop is only written to handle the dummy autoexec case
+    for i, sec_data in enumerate(section_data):
+        # offset_name
         byte_arr += struct.pack("I", sec_offset_names[i])
-        byte_arr += struct.pack("I", sec_num_commands)
-        byte_arr += struct.pack("I", first_sec_command)
+        # num_commands
+        byte_arr += struct.pack("I", sec_data[1])
+        # first_command
+        byte_arr += struct.pack("I", sec_data[2])
 
         data_block_offset += 12 #(3 * 4) bytes for each section
 
@@ -495,7 +492,7 @@ def create_mac_byte_array(name, command_strings):
 
     mac_info_bytes = b''
 
-    mac_info_bytes += struct.pack("I", num_sections)
+    mac_info_bytes += struct.pack("I", len(section_data))
     mac_info_bytes += struct.pack("I", offset_sections)
 
     mac_info_bytes += struct.pack("I", len(command_strings))

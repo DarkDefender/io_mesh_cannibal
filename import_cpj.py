@@ -23,12 +23,9 @@ import colorsys
 import bpy
 import bmesh
 
-import os, sys
-
-# Add the current directory to the search path so our local imports will work
-sys.path.append(os.path.dirname(__file__))
-
 from cpj_utils import *
+
+from formats.frm import Frm
 from formats.geo import Geo
 from formats.srf import Srf
 from formats.skl import Skl
@@ -42,17 +39,31 @@ def load(context, filepath):
 
     cpj_data = load_cpj_data(filepath)
 
+    if len(cpj_data["GEOB"]) > 1:
+        raise Exception('Importing cpjs with more than one mesh in it is not supported yet')
+        return {'CANCELLED'}
+
     # Load in all geometry data
-    # TODO load in more that one GEO entry if there are any
+    # TODO load in more than one GEO entry if there are any
     geo_data = Geo.from_bytes(cpj_data["GEOB"][0])
 
-    bl_object = load_geo(geo_data)
+    obj = load_geo(geo_data)
+
+    if len(cpj_data["SRFB"]) > 1:
+        raise Exception('Importing cpjs with more than one surface in it is not supported yet')
+        return {'CANCELLED'}
 
     # Load in all surface data
-    # TODO load in more that one SRF entry if there are any
+    # TODO load in more than one SRF entry if there are any
     srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
 
-    load_srf(srf_data, bl_object)
+    load_srf(srf_data, obj.data)
+
+    # Load vertex animation data as shape keys
+    # TODO load in more than one FRM entry if there are any
+    frm_data = Frm.from_bytes(cpj_data["FRMB"][0])
+
+    load_frm(frm_data, obj)
 
     # Load in all surface data
     # TODO load in more that one SKL entry if there are any
@@ -68,11 +79,66 @@ def load(context, filepath):
 
     return {'FINISHED'}
 
+def load_frm(frm_data, obj):
+    verts = obj.data.vertices
+
+    # TODO import all frames and update this function to support this
+    sk_basis = obj.shape_key_add(name='Basis')
+    sk_basis.interpolation = 'KEY_LINEAR'
+    obj.data.shape_keys.use_relative = False
+
+    for frame in frm_data.data_block.frames:
+        # Create new shape key
+        sk = obj.shape_key_add(name=frame.name)
+        sk.interpolation = 'KEY_LINEAR'
+
+        uses_group_compression = (frame.num_groups != 0)
+
+        pos = [0.0]*3
+
+        for i, vert in enumerate(frame.verts):
+            if uses_group_compression:
+                group_data = frame.groups[vert.group]
+                byte_pos = vert.pos
+                byte_pos[0] *= group_data.byte_scale.x
+                byte_pos[1] *= group_data.byte_scale.y
+                byte_pos[2] *= group_data.byte_scale.z
+
+                byte_pos[0] += group_data.byte_translate.x
+                byte_pos[1] += group_data.byte_translate.y
+                byte_pos[2] += group_data.byte_translate.z
+
+                pos = byte_pos
+            else:
+                pos = vert.pos
+
+            # position each vert
+            sk.data[i].co.x = pos[0]
+            sk.data[i].co.y = -pos[2]
+            sk.data[i].co.z = pos[1]
+
+
+def create_custom_data_layers(mesh_data):
+    # NOTE: We are not using the return values from the .new functions as there
+    # currently a bug/quirk in Blender that makes them invalid if the attribute
+    # layer array is re-allocated when adding new layers
+
+    # Create custom data layer for vertices
+    # They only have one flag (LODLOCK) so this is essentially a boolean
+    mesh_data.attributes.new("lod_lock", 'INT', 'POINT')
+    # This seems to be used to setup vertex data compression for vertex animations (FRM)
+    mesh_data.attributes.new("frm_group_index", 'INT', 'POINT')
+
+    # Create custom data layers for the triangles
+    mesh_data.attributes.new("flags", 'INT', 'FACE')
+    mesh_data.attributes.new("smooth_group", 'INT', 'FACE')
+    mesh_data.attributes.new("alpha_level", 'INT', 'FACE')
+    mesh_data.attributes.new("glaze_index", 'INT', 'FACE')
+    # The glaze func only have one enum value so this is actually just a boolean
+    mesh_data.attributes.new("glaze_func", 'INT', 'FACE')
+
 # Load mesh geometry data into Blender.
 def load_geo(geo_data):
-    # TODO this currently only load the basic triangle mesh
-    # This doesn't respect any other data from the geometry data structure currently.
-
     verts = geo_data.data_block.vertices
     vert_len = len(verts)
 
@@ -80,6 +146,7 @@ def load_geo(geo_data):
 
     for vert in verts:
         ref = vert.ref_pos
+        # Convert the vertex position into the correct transformation space for Blender
         cpj_verts.append((ref.x, -ref.z, ref.y))
 
     edges = geo_data.data_block.edges
@@ -91,9 +158,13 @@ def load_geo(geo_data):
     # Create a list of mesh faces
     bl_faces = []
     for tri in tris:
-        e0 = tri.edge_ring[0]
+
+        # Do the reverse winding of the triangle here as otherwise the triangles will
+        # become inverted because we convert the vertex coordinates to the Blender
+        # coordinate system.
+        e0 = tri.edge_ring[2]
         e1 = tri.edge_ring[1]
-        e2 = tri.edge_ring[2]
+        e2 = tri.edge_ring[0]
 
         v0 = edges[e0].tail_vertex
         v1 = edges[e1].tail_vertex
@@ -112,18 +183,30 @@ def load_geo(geo_data):
     scene = bpy.context.scene
     scene.collection.objects.link(obj)
 
+    create_custom_data_layers(mesh_data)
+
+    lod_lock_layer = mesh_data.attributes["lod_lock"]
+    group_index_layer = mesh_data.attributes["frm_group_index"]
+
+    for i, vert in enumerate(verts):
+        # As 'flags' can only be 0 or 1, we don't need to do any type casting
+        lod_lock_layer.data[i].value = vert.flags
+        group_index_layer.data[i].value = vert.group_index
+
+    # TODO load mount points with empties
+
     return obj
 
 # Load mesh texture and UV data into Blender.
-def load_srf(srf_data, bl_object):
+def load_srf(srf_data, mesh_data):
     # Create new empty UV layer
-    bl_uv_layer = bl_object.data.uv_layers.new(name="cpj_uv", do_init=False)
+    bl_uv_layer = mesh_data.uv_layers.new(name=srf_data.name, do_init=False)
 
     # Init BMesh with our existing object mesh
     bm = bmesh.new()
-    bm.from_mesh(bl_object.data)
+    bm.from_mesh(mesh_data)
     bm.faces.ensure_lookup_table()
-    uv = bm.loops.layers.uv[0]
+    uv_layer = bm.loops.layers.uv[0]
 
     # Sanity check
     if srf_data.num_tris != len(bm.faces):
@@ -139,39 +222,55 @@ def load_srf(srf_data, bl_object):
         col = colorsys.hls_to_rgb(h_val % 1.0, 0.6, 0.8)
         mat = bpy.data.materials.new(name=tex.name)
         mat.diffuse_color = (col[0], col[1], col[2], 1.0)
-        bl_object.data.materials.append(mat)
-        # TODO use tex.ref_name to look up the image texture
+        mesh_data.materials.append(mat)
+        if tex.ref_name:
+            # TODO use tex.ref_name to look up the image texture
+            mat["CPJ texture ref"] = tex.ref_name
         h_val += 0.1
 
     tris = srf_data.data_block.tris
     uvs = srf_data.data_block.uvs
 
     # Create the UV map
-    for i in range(len(tris)):
-        tri = tris[i]
-
-        uv0_idx = tri.uv_index[0]
+    for i, tri in enumerate(tris):
+        # This is reversing the loop because we reversed the vertex loop order for the geometry itself as well
+        uv0_idx = tri.uv_index[2]
         uv1_idx = tri.uv_index[1]
-        uv2_idx = tri.uv_index[2]
+        uv2_idx = tri.uv_index[0]
 
         uv0 = (uvs[uv0_idx].u, 1.0 - uvs[uv0_idx].v)
         uv1 = (uvs[uv1_idx].u, 1.0 - uvs[uv1_idx].v)
         uv2 = (uvs[uv2_idx].u, 1.0 - uvs[uv2_idx].v)
 
-        bm.faces[i].loops[0][uv].uv = uv0
-        bm.faces[i].loops[1][uv].uv = uv1
-        bm.faces[i].loops[2][uv].uv = uv2
+        bm.faces[i].loops[0][uv_layer].uv = uv0
+        bm.faces[i].loops[1][uv_layer].uv = uv1
+        bm.faces[i].loops[2][uv_layer].uv = uv2
 
         # set material index
         bm.faces[i].material_index = tri.tex_index
 
-    # TODO handle the flags, smoothing groups, alpha level, and glaze data stored in the triangle srf data.
-
     # Update our object mesh
-    bm.to_mesh(bl_object.data)
+    bm.to_mesh(mesh_data)
     bm.free()
 
+
+
+    flags_layer = mesh_data.attributes["flags"]
+    smooth_group_layer = mesh_data.attributes["smooth_group"]
+    alpha_level_layer = mesh_data.attributes["alpha_level"]
+    glaze_index_layer = mesh_data.attributes["glaze_index"]
+    glaze_func_layer = mesh_data.attributes["glaze_func"]
+
+    for i, tri in enumerate(tris):
+        flags_layer.data[i].value = tri.flags
+        smooth_group_layer.data[i].value = tri.smooth_group
+        alpha_level_layer.data[i].value = tri.alpha_level
+        glaze_index_layer.data[i].value = tri.glaze_tex_index
+        glaze_func_layer.data[i].value = tri.glaze_func
+
 # Load skeleton bones as blender armatures
+
+
 def load_skl(skl_data, bl_object):
     # Data has location of bones
     # Zeddb (wisely) advises two passes:
@@ -186,7 +285,7 @@ def load_skl(skl_data, bl_object):
     indexToBoneName = {}
 
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-    ob_armature = bpy.context.active_object # Should I use bl_object?
+    ob_armature = bpy.context.active_object  # Should I use bl_object?
     edit_bones = ob_armature.data.edit_bones
 
     # This entire scheme assumes the indexes in createdBones,
@@ -201,7 +300,7 @@ def load_skl(skl_data, bl_object):
         working_bone = edit_bones.new(bone_data.name)
         working_bone.head = (0, 1, 2)   # do these head and tail
         working_bone.tail = (1, 2, 3)   # values matter? Like, does
-                                        # Location in bose change them?
+        # Location in bose change them?
         created_bones.append(working_bone)
 
         # apply vertex and weight?
@@ -210,9 +309,9 @@ def load_skl(skl_data, bl_object):
         # geo is Vertex[i] in the skl. So, if the geo already has
         # vertex groups...
 
-    # Pass 2: Set bone parents 
+    # Pass 2: Set bone parents
     for bone_index in range(len(bone_datas)):
-        if bone_index != -1: # -1 is root bone/no parent
+        if bone_index != -1:  # -1 is root bone/no parent
             bone_data = bone_datas[bone_index]
             bone = created_bones[bone_index]
             bone.parent = edit_bones[bone_data.parent_name]
@@ -226,7 +325,7 @@ def load_skl(skl_data, bl_object):
         # If we assume that a bone's origin is its center,
         # then the head and tail would be location +/- length/2
         # in the direction of the rotation.
-        
+
         bone_trans = bone_data.base_translate
         pose_bone.location = [bone_trans.x, -bone_trans.z, bone_trans.y]
 
@@ -248,40 +347,43 @@ def load_skl(skl_data, bl_object):
     for vert_index in range(len(ob_armature.verticies)):
         vertex = ob_armature.verticies[vert_index]
         weight_range = range(
-                vert_index + weight_shift, 
-                vert_index + weight_shift + vertex_data[vert_index].num_weights)
+            vert_index + weight_shift,
+            vert_index + weight_shift + vertex_data[vert_index].num_weights)
         for local_weight_index in weight_range:
             group_index = local_weight_index - vert_index - weight_shift
             # add group to vertex.groups
             # index is the relative index of the weight
             # groups might already exist? unsure, double-check importer
             vertex.groups[group_index] = bpy.context.active_object.vertex_groups.new(
-                    name=f'{vert_index}-{group_index}')
-  
+                name=f'{vert_index}-{group_index}')
+
             # set group weight to be weight_data[local_weight_index].weight_factor
             vertex.groups[group_index].weight = weight_data[local_weight_index].weight_factor
-            
-            # somehow? add bone at 
+
+            # somehow? add bone at
             #   edit_bones[weight_data[local_weight_index].bone_index] to the
             #   vertex/group
             # wait... is that even a thing? I'm not sure...
             # And something might happen with weight_data[local_weight_index].offset_pos
-
 
     # Finally, set current pose as rest pose
     bpy.ops.pose.armature_apply(selected=False)
 
     # Then potentially add verticies, weights, and mount points.
 
-
 def load_mac(mac_data):
-    # TODO handle sections
-    # mac_data.data_block.sections[0]
+    # TODO mac data loading correctly
 
-    # TODO actually act on the data stored here so we set the origin and scale of the object etc etc...
+    mac_text = bpy.data.texts.new("cpj_" + mac_data.name)
+    for sec in mac_data.data_block.sections:
+        # Write section name start delimiter
+        mac_text.write("--- " + sec.name + "\n")
 
-    mac_text = bpy.data.texts.new("cbj_" + mac_data.name)
-
-    for com in mac_data.data_block.commands:
-        mac_text.write(com.command_str + "\n")
+        # TODO actually act on the data stored here so we set the origin and scale of the object etc etc...
+        # ONLY if the command section is "autoexec" though!!!
+        # The other sections we don't know what to do with. But they should be kept intact as per the format spec
+        start_com = sec.first_command
+        end_com = start_com + sec.num_commands
+        for com in mac_data.data_block.commands[start_com:end_com]:
+            mac_text.write(com.command_str + "\n")
 

@@ -2,7 +2,7 @@ from cpj_utils import *
 from compare_data import *
 from test_utils import *
 
-file_data1 = load_cpj_data("/tmp/Edf_dog.cpj")
+file_data1 = load_cpj_data("../ASHTRAY1.cpj")
 #file_data2 = load_cpj_data("/tmp/smokealarm.cpj")
 
 frm_byte_data_list = []
