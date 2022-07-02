@@ -298,9 +298,10 @@ def load_skl(skl_data, bl_object):
     # Pass 1: Create bones
     for bone_data in bone_datas:
         working_bone = edit_bones.new(bone_data.name)
-        working_bone.head = (0, 1, 2)   # do these head and tail
-        working_bone.tail = (1, 2, 3)   # values matter? Like, does
-        # Location in bose change them?
+        # temp head and tail, these get set for real
+        # once the parent is set
+        working_bone.head = (0, 0, 0)
+        working_bone.tail = (1, 2, 3)   
         created_bones.append(working_bone)
 
         # apply vertex and weight?
@@ -321,23 +322,29 @@ def load_skl(skl_data, bl_object):
         pose_bone = ob_armature.pose.bones[bone_index]
         bone_data = bone_datas[bone_index]
 
-        # might need to change head and tail locations first
-        # If we assume that a bone's origin is its center,
-        # then the head and tail would be location +/- length/2
-        # in the direction of the rotation.
-
         bone_trans = bone_data.base_translate
         pose_bone.location = [bone_trans.x, -bone_trans.z, bone_trans.y]
 
         # Recreating quat in a way blender recognizes
-        pose_bone.rotation_quaternion = bpy.MathUtils.Quaternion(
+        bone_quat = bpy.MathUtils.Quaternion(
             bone_data.base_rotate.s,
             bone_data.base_rotate.v.x,
             bone_data.base_rotate.v.y,
             bone_data.base_rotate.v.z
         )
+        pose_bone.rotation_quaternion = bone_quat
 
         pose_bone.scale = bone_data.base_scale
+
+        # There's probably a more succinct to express this math, but
+        # I trust it's correct, so I'm doing it
+        # This assumes that the rotate method maintains vector scale
+        # and that bone.head/tail is compatable with Mathutils.Vector
+        bone_vec = bpy.Mathutils.Vector((0.0, 0.0, bone_data.length))
+        bone_vec.rotate(bone_quat)
+        bone_vec = pose_bone.head - bone_vec
+        pose_bone.tail = bone_vec
+
 
     # Pass 4: Apply Vertex Groups and Weights
     # This loop gets to be n^2 because it does 2 things
