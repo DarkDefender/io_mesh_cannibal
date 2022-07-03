@@ -45,6 +45,7 @@ def load(context, filepath):
 
     # Load in all geometry data
     # TODO load in more than one GEO entry if there are any
+    # Unlike other chunks, there has to be at least 1 GEO chunk
     geo_data = Geo.from_bytes(cpj_data["GEOB"][0])
 
     obj = load_geo(geo_data)
@@ -55,24 +56,27 @@ def load(context, filepath):
 
     # Load in all surface data
     # TODO load in more than one SRF entry if there are any
-    srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
+    if "SRFB" in cpj_data:
+        srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
 
-    load_srf(srf_data, obj.data)
+        load_srf(srf_data, obj.data)
 
     # Load vertex animation data as shape keys
     # TODO load in more than one FRM entry if there are any
-    frm_data = Frm.from_bytes(cpj_data["FRMB"][0])
+    if "FRMB" in cpj_data:
+        frm_data = Frm.from_bytes(cpj_data["FRMB"][0])
 
-    load_frm(frm_data, obj)
+        load_frm(frm_data, obj)
 
-    # Load in all surface data
+    # Load in all skeleton data
     # TODO load in more that one SKL entry if there are any
-    # And the rest of it lol
-    skl_data = Skl.from_bytes(cpj_data["SKLB"][0])
+    if "SKLB" in cpj_data:
+        skl_data = Skl.from_bytes(cpj_data["SKLB"][0])
 
-    load_skl(skl_data)
+        load_skl(skl_data)
 
     # Load Model Actor Configuation data
+    # Unlike other chunks, there has to be at least 1 MAC chunk
     mac_data = Mac.from_bytes(cpj_data["MACB"][0])
 
     load_mac(mac_data)
@@ -271,7 +275,7 @@ def load_srf(srf_data, mesh_data):
 # Load skeleton bones as blender armatures
 
 
-def load_skl(skl_data, bl_object):
+def load_skl(skl_data):
     # Bones are handled in multiple passes since their
     # transforms are parent sensitive
     # skl.yaml is the KaiTai parser source
