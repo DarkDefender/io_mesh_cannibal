@@ -34,6 +34,7 @@ from export_cpj import calc_boundbox_max_min
 
 from bpy.props import (
     BoolProperty,
+    IntProperty,
     FloatProperty,
     StringProperty,
     EnumProperty,
@@ -146,10 +147,72 @@ class CPJ_InitOperator(Operator):
 
         return {'FINISHED'}
 
-class CPJ_DoubleOperator(Operator):
-    """Mark selected faces as double sided"""
-    bl_idname = "object.cpj_selected_as_double"
-    bl_label = "CPJ mark faces as double sided"
+def set_selected_face_bit_value(context,layer, value):
+    obj = context.object
+
+    if obj.type != 'MESH':
+        raise Exception("Must be a mesh object")
+    # assuming the object is currently in Edit Mode.
+    me = obj.data
+    bm = bmesh.from_edit_mesh(me)
+
+    value_layer = bm.faces.layers.int[layer]
+
+    for f in bm.faces:
+        if f.select:
+            f[value_layer] |= value
+
+    # Show the updates in the viewport
+    # and recalculate n-gon tessellation.
+    bmesh.update_edit_mesh(me)
+
+def clear_selected_face_bit_value(context,layer, value):
+    obj = context.object
+
+    if obj.type != 'MESH':
+        raise Exception("Must be a mesh object")
+    # assuming the object is currently in Edit Mode.
+    me = obj.data
+    bm = bmesh.from_edit_mesh(me)
+
+    value_layer = bm.faces.layers.int[layer]
+
+    for f in bm.faces:
+        if f.select:
+            f[value_layer] &= ~value
+
+    # Show the updates in the viewport
+    # and recalculate n-gon tessellation.
+    bmesh.update_edit_mesh(me)
+
+class CPJ_FaceFlagAssign(Operator):
+    """Mark selected faces with active CPJ flag"""
+    bl_idname = "object.cpj_face_mark_assign"
+    bl_label = "Mark selected with active CPJ flag"
+
+    def execute(self, context):
+        flag_type = int(context.scene.cpj_flag_types, 16)
+        set_selected_face_bit_value(context, 'flags', flag_type)
+
+        return {'FINISHED'}
+
+class CPJ_FaceFlagRemove(Operator):
+    """Remove active CPJ flag from selected faces"""
+    bl_idname = "object.cpj_face_mark_remove"
+    bl_label = "Remove active cpj flag from faces"
+
+    def execute(self, context):
+        flag_type = int(context.scene.cpj_flag_types, 16)
+        clear_selected_face_bit_value(context, 'flags', flag_type)
+
+        return {'FINISHED'}
+
+class CPJ_FaceFlagSelect(Operator):
+    """Select faces with active cpj flag"""
+    bl_idname = "object.cpj_face_mark_select"
+    bl_label = "Select all faces with active cpj flag"
+
+    deselect: BoolProperty()
 
     def execute(self, context):
         obj = context.object
@@ -162,13 +225,78 @@ class CPJ_DoubleOperator(Operator):
 
         flags_layer = bm.faces.layers.int['flags']
 
+        flag_type = int(context.scene.cpj_flag_types, 16)
+
         for f in bm.faces:
-            if f.select:
-                f[flags_layer] = 0x40 # Set two sided flag
+            if f[flags_layer] & flag_type != 0:
+                f.select = not self.deselect
 
         # Show the updates in the viewport
         # and recalculate n-gon tessellation.
         bmesh.update_edit_mesh(me)
+
+        return {'FINISHED'}
+
+def set_selected_face_value(context,layer, value):
+    obj = context.object
+
+    if obj.type != 'MESH':
+        raise Exception("Must be a mesh object")
+    # assuming the object is currently in Edit Mode.
+    me = obj.data
+    bm = bmesh.from_edit_mesh(me)
+
+    value_layer = bm.faces.layers.int[layer]
+
+    for f in bm.faces:
+        if f.select:
+            f[value_layer] = value
+
+    # Show the updates in the viewport
+    # and recalculate n-gon tessellation.
+    bmesh.update_edit_mesh(me)
+
+class CPJ_SmoothGroupAssign(Operator):
+    """Set selected cpj face group"""
+    bl_idname = "object.cpj_smooth_g_set"
+    bl_label = "Set cpj face group"
+
+    def execute(self, context):
+        smooth_group = context.scene.cpj_smooth_g
+        set_selected_face_value(context, 'smooth_group', smooth_group)
+
+        return {'FINISHED'}
+
+class CPJ_AlphaAssign(Operator):
+    """Set selected cpj face alpha level"""
+    bl_idname = "object.cpj_alpha_lvl_set"
+    bl_label = "Set cpj alpha level"
+
+    def execute(self, context):
+        a_lvl = context.scene.cpj_alpha_lvl
+        set_selected_face_value(context, 'alpha_level', a_lvl)
+
+        return {'FINISHED'}
+
+class CPJ_GlazeAssign(Operator):
+    """Set selected cpj face glaze texture"""
+    bl_idname = "object.cpj_glaze_set"
+    bl_label = "Set cpj glaze"
+
+    def execute(self, context):
+        glaze_tex = context.scene.cpj_glaze_tex
+        set_selected_face_value(context, 'glaze_index', glaze_tex)
+
+        return {'FINISHED'}
+
+class CPJ_GlazeFuncAssign(Operator):
+    """Set selected cpj face glaze function"""
+    bl_idname = "object.cpj_glaze_func_set"
+    bl_label = "Set cpj glaze function"
+
+    def execute(self, context):
+        glaze_func = context.scene.cpj_glaze_func
+        set_selected_face_value(context, 'glaze_func', glaze_func)
 
         return {'FINISHED'}
 
@@ -200,12 +328,35 @@ class EDIT_PT_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
 
-        layout.label(text="Operators:")
+        layout.label(text="Face Flags:")
+        layout.prop(context.scene, "cpj_flag_types", text="")
 
-        col = layout.column(align=True)
-        col.operator(CPJ_DoubleOperator.bl_idname, text="Selected as Double Sided")
+        row = layout.row(align=True)
+        row.operator(CPJ_FaceFlagAssign.bl_idname, text="Assign")
+        row.operator(CPJ_FaceFlagRemove.bl_idname, text="Remove")
+        row = layout.row(align=True)
+        row.operator(CPJ_FaceFlagSelect.bl_idname, text="Select").deselect = False
+        row.operator(CPJ_FaceFlagSelect.bl_idname, text="Deselect").deselect = True
 
-        layout.separator()
+        layout.label(text="Smooth Group:")
+        row = layout.row(align=True)
+        row.operator(CPJ_SmoothGroupAssign.bl_idname, text="Assign")
+        row.prop(context.scene, "cpj_smooth_g", text="")
+
+        layout.label(text="Alpha Level:")
+        row = layout.row(align=True)
+        row.operator(CPJ_AlphaAssign.bl_idname, text="Assign")
+        row.prop(context.scene, "cpj_alpha_lvl", text="")
+
+        layout.label(text="Glaze Texture Index:")
+        row = layout.row(align=True)
+        row.operator(CPJ_GlazeAssign.bl_idname, text="Assign")
+        row.prop(context.scene, "cpj_glaze_tex", text="")
+
+        layout.label(text="Glaze Function:")
+        row = layout.row(align=True)
+        row.operator(CPJ_GlazeFuncAssign.bl_idname, text="Assign")
+        row.prop(context.scene, "cpj_glaze_func", text="")
 
 # ----------------------------------------------------------------------------
 classes = {
@@ -214,7 +365,13 @@ classes = {
     OBJ_PT_panel,
     EDIT_PT_panel,
     CPJ_InitOperator,
-    CPJ_DoubleOperator,
+    CPJ_FaceFlagAssign,
+    CPJ_FaceFlagRemove,
+    CPJ_FaceFlagSelect,
+    CPJ_SmoothGroupAssign,
+    CPJ_AlphaAssign,
+    CPJ_GlazeAssign,
+    CPJ_GlazeFuncAssign,
 }
 
 
@@ -226,6 +383,44 @@ def register():
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
 
+    bpy.types.Scene.cpj_flag_types = EnumProperty(name="Face Flags",
+        description="Used to mark faces for special handling like double sided rendering",
+        items=[
+            ('0x1', "Inactive",
+                "The triangle is not active"),
+            ('0x2', "Invisible",
+                "Present but invisible"),
+            ('0x4', "VN Ignore",
+                "Ignore this face when calculating vertex normals"),
+            ('0x8', "Transparent",
+                "Enable transparency rendering on this face"),
+            ('0x20', "Unlit",
+                "Face is not affected by dynamic lighting"),
+            ('0x40', "Two Sided",
+                "Face is visible from both sides"),
+            ('0x80', "Color Masking",
+                "Color key masking is active"),
+            ('0x100', "Modulated",
+                "Modulated rendering is enabled"),
+            ('0x200', "Env Map",
+                "Enviroment mapped"),
+            ('0x400', "Non Collide",
+                "Trace rays will not collide with this face"),
+            ('0x800', "Tex Blend",
+                ""),
+            ('0x1000', "Z Later",
+                ""),
+            ('0x10000', "Reserved",
+                ""),
+          ]
+        )
+
+    bpy.types.Scene.cpj_smooth_g = IntProperty(min = 0, max = 256)
+    bpy.types.Scene.cpj_alpha_lvl = IntProperty(min = 0, max = 256)
+    bpy.types.Scene.cpj_glaze_tex = IntProperty(min = 0, max = 256)
+    bpy.types.Scene.cpj_glaze_func = BoolProperty()
+
+
     print("CPJ plugin loaded")  # FIXME debug
 
 
@@ -236,6 +431,12 @@ def unregister():
 
     for cls in classes:
         bpy.utils.unregister_class(cls)
+
+    del bpy.types.Scene.cpj_flag_types
+    del bpy.types.Scene.cpj_smooth_g
+    del bpy.types.Scene.cpj_alpha_lvl
+    del bpy.types.Scene.cpj_glaze_tex
+    del bpy.types.Scene.cpj_glaze_func
 
     print("CPJ plugin unloaded")  # FIXME debug
 
