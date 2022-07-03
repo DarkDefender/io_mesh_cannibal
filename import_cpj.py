@@ -70,7 +70,7 @@ def load(context, filepath):
     # And the rest of it lol
     skl_data = Skl.from_bytes(cpj_data["SKLB"][0])
 
-    load_skl(skl_data, bl_object)
+    load_skl(skl_data)
 
     # Load Model Actor Configuation data
     mac_data = Mac.from_bytes(cpj_data["MACB"][0])
@@ -272,26 +272,19 @@ def load_srf(srf_data, mesh_data):
 
 
 def load_skl(skl_data, bl_object):
-    # Data has location of bones
-    # Zeddb (wisely) advises two passes:
-    # Pass 1: create bones and set their parents
-    # Pass 2: transform the bones
-    # This is because  bones in cpj data have parent-sensitive transforms.
-
-    # bl_object and ob_armature might refer to the same thing.
-    # If they do, prefer bl_object
-
+    # Bones are handled in multiple passes since their
+    # transforms are parent sensitive
     # skl.yaml is the KaiTai parser source
-    indexToBoneName = {}
 
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-    ob_armature = bpy.context.active_object  # Should I use bl_object?
+    ob_armature = bpy.context.active_object
     edit_bones = ob_armature.data.edit_bones
 
     # This entire scheme assumes the indexes in createdBones,
     # obArmature.pose.bones, and boneData.parent_index all point
     # to the same bone. Which they should. Yeah.
 
+    #can probably get away with just using edit bones?
     created_bones = []
     bone_datas = skl_data.data_block.bones
 
@@ -302,19 +295,14 @@ def load_skl(skl_data, bl_object):
         # once the parent is set
         working_bone.head = (0, 0, 0)
         working_bone.tail = (1, 2, 3)   
-        created_bones.append(working_bone)
 
-        # apply vertex and weight?
-        # potentially yes. Vertex/ Vertex Groups are
-        # shared between data in cpj. Or, rather, Vertex[i] in the
-        # geo is Vertex[i] in the skl. So, if the geo already has
-        # vertex groups...
+        #created_bones.append(working_bone)
 
     # Pass 2: Set bone parents
     for bone_index in range(len(bone_datas)):
         if bone_index != -1:  # -1 is root bone/no parent
             bone_data = bone_datas[bone_index]
-            bone = created_bones[bone_index]
+            bone = edit_bones[bone_index]
             bone.parent = edit_bones[bone_data.parent_name]
 
     # Pass 3: Transform bones
@@ -351,21 +339,20 @@ def load_skl(skl_data, bl_object):
     weight_shift = 0
     vertex_data = skl_data.data_block.verts
     weight_data = skl_data.data_block.weights
+    
     for vert_index in range(len(ob_armature.verticies)):
         vertex = ob_armature.verticies[vert_index]
-        weight_range = range(
-            vert_index + weight_shift,
-            vert_index + weight_shift + vertex_data[vert_index].num_weights)
-        for local_weight_index in weight_range:
-            group_index = local_weight_index - vert_index - weight_shift
+        vert_shift = vert_index + weight_shift
+
+        for group_index in range(vertex_data[vert_index].num_weights):
             # add group to vertex.groups
             # index is the relative index of the weight
-            # groups might already exist? unsure, double-check importer
             vertex.groups[group_index] = bpy.context.active_object.vertex_groups.new(
-                name=f'{vert_index}-{group_index}')
+                name=f'{vert_index}-{group_index}'
+            )
 
-            # set group weight to be weight_data[local_weight_index].weight_factor
-            vertex.groups[group_index].weight = weight_data[local_weight_index].weight_factor
+            new_weight = weight_data[group_index + vert_shift].weight_factor
+            vertex.groups[group_index].weight = new_weight
 
             # somehow? add bone at
             #   edit_bones[weight_data[local_weight_index].bone_index] to the
@@ -373,10 +360,12 @@ def load_skl(skl_data, bl_object):
             # wait... is that even a thing? I'm not sure...
             # And something might happen with weight_data[local_weight_index].offset_pos
 
+    # Pass 5: Mount Points
+    # but that can be later
+
     # Finally, set current pose as rest pose
     bpy.ops.pose.armature_apply(selected=False)
 
-    # Then potentially add verticies, weights, and mount points.
 
 def load_mac(mac_data):
     # TODO mac data loading correctly
