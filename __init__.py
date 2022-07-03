@@ -300,6 +300,47 @@ class CPJ_GlazeFuncAssign(Operator):
 
         return {'FINISHED'}
 
+def set_selected_vert_value(context,layer, value):
+    obj = context.object
+
+    if obj.type != 'MESH':
+        raise Exception("Must be a mesh object")
+    # assuming the object is currently in Edit Mode.
+    me = obj.data
+    bm = bmesh.from_edit_mesh(me)
+
+    value_layer = bm.verts.layers.int[layer]
+
+    for v in bm.verts:
+        if v.select:
+            v[value_layer] = value
+
+    # Show the updates in the viewport
+    # and recalculate n-gon tessellation.
+    bmesh.update_edit_mesh(me)
+
+class CPJ_LODLockAssign(Operator):
+    """Set LOD lock on selected vertices"""
+    bl_idname = "object.cpj_lod_lock_set"
+    bl_label = "Set cpj lod lock"
+
+    def execute(self, context):
+        lod_lock = context.scene.cpj_lod_lock
+        set_selected_vert_value(context, 'lod_lock', lod_lock)
+
+        return {'FINISHED'}
+
+class CPJ_FRMGroupIndexAssign(Operator):
+    """Set FRM Group index on the seleted vertss"""
+    bl_idname = "object.cpj_frm_group_set"
+    bl_label = "Set cpj FRM group index"
+
+    def execute(self, context):
+        frm_group = context.scene.cpj_frm_group_index
+        set_selected_vert_value(context, 'frm_group_index', frm_group)
+
+        return {'FINISHED'}
+
 # ----------------------------------------------------------------------------
 class OBJ_PT_panel(bpy.types.Panel):
     bl_label = "CPJ helper operators"
@@ -318,8 +359,8 @@ class OBJ_PT_panel(bpy.types.Panel):
 
         layout.separator()
 
-class EDIT_PT_panel(bpy.types.Panel):
-    bl_label = "CPJ helper operators"
+class EDIT_PT_Fpanel(bpy.types.Panel):
+    bl_label = "Face attributes"
     bl_category = "CPJ Utils"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -358,12 +399,33 @@ class EDIT_PT_panel(bpy.types.Panel):
         row.operator(CPJ_GlazeFuncAssign.bl_idname, text="Assign")
         row.prop(context.scene, "cpj_glaze_func", text="")
 
+class EDIT_PT_Vpanel(bpy.types.Panel):
+    bl_label = "Vertex attributes"
+    bl_category = "CPJ Utils"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_context = "mesh_edit"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.label(text="LOD lock:")
+        row = layout.row(align=True)
+        row.operator(CPJ_LODLockAssign.bl_idname, text="Assign")
+        row.prop(context.scene, "cpj_lod_lock", text="")
+
+        layout.label(text="FRM Group:")
+        row = layout.row(align=True)
+        row.operator(CPJ_FRMGroupIndexAssign.bl_idname, text="Assign")
+        row.prop(context.scene, "cpj_frm_group_index", text="")
+
 # ----------------------------------------------------------------------------
 classes = {
     ImportCPJ,
     ExportCPJ,
     OBJ_PT_panel,
-    EDIT_PT_panel,
+    EDIT_PT_Fpanel,
+    EDIT_PT_Vpanel,
     CPJ_InitOperator,
     CPJ_FaceFlagAssign,
     CPJ_FaceFlagRemove,
@@ -372,6 +434,8 @@ classes = {
     CPJ_AlphaAssign,
     CPJ_GlazeAssign,
     CPJ_GlazeFuncAssign,
+    CPJ_LODLockAssign,
+    CPJ_FRMGroupIndexAssign,
 }
 
 
@@ -382,6 +446,9 @@ def register():
 
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
+
+    bpy.types.Scene.cpj_lod_lock = BoolProperty()
+    bpy.types.Scene.cpj_frm_group_index = IntProperty(min = 0, max = 256)
 
     bpy.types.Scene.cpj_flag_types = EnumProperty(name="Face Flags",
         description="Used to mark faces for special handling like double sided rendering",
