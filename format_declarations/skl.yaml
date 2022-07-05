@@ -89,7 +89,7 @@ types:
       - id: offset_name
         type: u4
       - id: parent_index
-        type: u4
+        type: s4
       - id: base_scale
         type: vec3f
       - id: base_rotate

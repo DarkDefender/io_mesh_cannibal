@@ -73,7 +73,7 @@ def load(context, filepath):
     if "SKLB" in cpj_data:
         skl_data = Skl.from_bytes(cpj_data["SKLB"][0])
 
-        load_skl(skl_data)
+        load_skl(skl_data, obj)
 
     # Load Model Actor Configuation data
     # Unlike other chunks, there has to be at least 1 MAC chunk
@@ -275,14 +275,38 @@ def load_srf(srf_data, mesh_data):
 # Load skeleton bones as blender armatures
 
 
-def load_skl(skl_data):
+def load_skl(skl_data, bl_object):
     # Bones are handled in multiple passes since their
     # transforms are parent sensitive
     # skl.yaml is the KaiTai parser source
 
+    # create armature first lol
+    # bl_obj.new(name, armature id)
+    # 
+    # this is obj armature
+    # then it needs to be a child of bl_object
+    # first, create new armature data in bpy.data
+    # then use bpy.data.objects.new(name, armature_data)
+    # to create ob_armature
+    # then make bl_object ob_armature's parent
+    name = "No_name_defined"
+
+    if hasattr(skl_data, 'name'):
+        name = skl_data.name
+
+    armature_data = bpy.data.armatures.new(name)
+    ob_armature = bpy.data.objects.new(name, armature_data)
+    
+    scene = bpy.context.scene
+    scene.collection.objects.link(ob_armature)
+    ob_armature.parent = bl_object
+    bpy.context.view_layer.objects.active = ob_armature
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-    ob_armature = bpy.context.active_object
     edit_bones = ob_armature.data.edit_bones
+
+    #scene = bpy.context.scene
+    #scene.collection.objects.link(obj)
+    #
 
     # This entire scheme assumes the indexes in createdBones,
     # obArmature.pose.bones, and boneData.parent_index all point
@@ -304,10 +328,10 @@ def load_skl(skl_data):
 
     # Pass 2: Set bone parents
     for bone_index in range(len(bone_datas)):
-        if bone_index != -1:  # -1 is root bone/no parent
-            bone_data = bone_datas[bone_index]
+        parent_index = bone_datas[bone_index].parent_index
+        if parent_index >= 0:  # -1 is root bone/no parent
             bone = edit_bones[bone_index]
-            bone.parent = edit_bones[bone_data.parent_name]
+            bone.parent = edit_bones[parent_index]
 
     # Pass 3: Transform bones
     for bone_index in range(len(bone_datas)):
@@ -340,12 +364,17 @@ def load_skl(skl_data):
 
     # Pass 4: Apply Vertex Groups and Weights
     # This loop gets to be n^2 because it does 2 things
+
+    # Do we need to add verticies to the armature too?
+    # Or can we just piggyback off of the geo's like I've been doing?
+    # Documentation implies the first one...
+
     weight_shift = 0
     vertex_data = skl_data.data_block.verts
     weight_data = skl_data.data_block.weights
     
-    for vert_index in range(len(ob_armature.verticies)):
-        vertex = ob_armature.verticies[vert_index]
+    for vert_index in range(len(bl_object.verticies)):
+        vertex = bl_object.verticies[vert_index]
         vert_shift = vert_index + weight_shift
 
         for group_index in range(vertex_data[vert_index].num_weights):

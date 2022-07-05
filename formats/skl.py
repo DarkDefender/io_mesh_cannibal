@@ -71,7 +71,7 @@ class Skl(KaitaiStruct):
 
         def _read(self):
             self.offset_name = self._io.read_u4le()
-            self.parent_index = self._io.read_u4le()
+            self.parent_index = self._io.read_s4le()
             self.base_scale = Skl.Vec3f(self._io, self, self._root)
             self.base_rotate = Skl.Quat(self._io, self, self._root)
             self.base_translate = Skl.Vec3f(self._io, self, self._root)
