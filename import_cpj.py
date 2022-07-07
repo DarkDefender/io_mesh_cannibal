@@ -22,6 +22,7 @@
 import colorsys
 import bpy
 import bmesh
+import mathutils
 
 from cpj_utils import *
 
@@ -328,38 +329,83 @@ def load_skl(skl_data, bl_object):
 
     # Pass 2: Set bone parents
     for bone_index in range(len(bone_datas)):
-        parent_index = bone_datas[bone_index].parent_index
-        if parent_index >= 0:  # -1 is root bone/no parent
-            bone = edit_bones[bone_index]
-            bone.parent = edit_bones[parent_index]
-
-    # Pass 3: Transform bones
-    for bone_index in range(len(bone_datas)):
-        pose_bone = ob_armature.pose.bones[bone_index]
         bone_data = bone_datas[bone_index]
+        parent_index = bone_data.parent_index
+        bone = edit_bones[bone_index]
 
-        bone_trans = bone_data.base_translate
-        pose_bone.location = [bone_trans.x, -bone_trans.z, bone_trans.y]
+        if parent_index >= 0:  # -1 is root bone/no parent
+            bone.parent = edit_bones[parent_index]
+            bone.use_connect = True
 
+        # Now that parent is set, head/tail can be placed
+        # uh... I think
         # Recreating quat in a way blender recognizes
-        bone_quat = bpy.MathUtils.Quaternion(
+        bone_quat = mathutils.Quaternion((
             bone_data.base_rotate.s,
             bone_data.base_rotate.v.x,
             bone_data.base_rotate.v.y,
             bone_data.base_rotate.v.z
-        )
-        pose_bone.rotation_quaternion = bone_quat
-
-        pose_bone.scale = bone_data.base_scale
+        ))
 
         # There's probably a more succinct to express this math, but
         # I trust it's correct, so I'm doing it
         # This assumes that the rotate method maintains vector scale
         # and that bone.head/tail is compatable with Mathutils.Vector
-        bone_vec = bpy.Mathutils.Vector((0.0, 0.0, bone_data.length))
-        bone_vec.rotate(bone_quat)
-        bone_vec = pose_bone.head - bone_vec
-        pose_bone.tail = bone_vec
+        bhv = bone_data.base_translate
+        bone.head = (bhv.x, -bhv.z, bhv.y)
+        bone_vec = mathutils.Vector((bhv.x, -bhv.z, bhv.y + bone_data.length))
+        #bone_vec.rotate(bone_quat)
+        bone_vec = bone.head + bone_vec
+        bone.tail = bone_vec
+
+    # switch to pose mode, and probably also
+    # add edit bones to the pose? or just make them
+    # not be edit bones
+
+    # TRANSFORM BONES BEFORE GOING TO POSE
+
+    # So basically, use rot, scale, pos, and length of data
+    # and center, head, and length of edit_bone to place the bone
+    # correctly. Then apply them in the bose just to be safe
+
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+    bpy.ops.object.mode_set(mode='POSE', toggle=False)
+
+
+    # Pass 2-and-a-half: Generate Bones because edit bones are fake
+    # and made of lies, apparently?
+
+    # Pass 3: Transform bones
+    # There end up being more pose bones than bone datas,
+    # somehow. Maybe because the root bone doesn't count?
+    # idk add a qualifier to it so if it's out of range
+    # on ob_armature.pose.bones it just continues
+    for bone_index in range(len(bone_datas)):
+
+        if not (bone_index in ob_armature.pose.bones.keys()):
+            continue
+
+        pose_bone = ob_armature.pose.bones[bone_index]
+        bone_data = bone_datas[bone_index]
+
+        bone_trans = bone_data.base_translate
+        pose_bone.location = (bone_trans.x, -bone_trans.z, bone_trans.y)
+
+        # Recreating quat in a way blender recognizes
+        bone_quat = mathutils.Quaternion((
+            bone_data.base_rotate.s,
+            bone_data.base_rotate.v.x,
+            bone_data.base_rotate.v.y,
+            bone_data.base_rotate.v.z
+        ))
+        pose_bone.rotation_quaternion = bone_quat
+
+        bone_scl = bone_data.base_scale
+        pose_bone.scale = (bone_scl.x, bone_scl.y, bone_scl.z)
+
+    # Finally, set current pose as rest pose
+    bpy.ops.pose.armature_apply(selected=False)
+    return
 
 
     # Pass 4: Apply Vertex Groups and Weights
