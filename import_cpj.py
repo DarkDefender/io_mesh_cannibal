@@ -30,7 +30,10 @@ from formats.frm import Frm
 from formats.geo import Geo
 from formats.srf import Srf
 from formats.skl import Skl
+from formats.seq import Seq
 from formats.mac import Mac
+
+from math import pi
 
 # ----------------------------------------------------------------------------
 def load(context, filepath):
@@ -71,10 +74,17 @@ def load(context, filepath):
 
     # Load in all skeleton data
     # TODO load in more that one SKL entry if there are any
+    ob_armature = None
     if "SKLB" in cpj_data:
         skl_data = Skl.from_bytes(cpj_data["SKLB"][0])
 
-        load_skl(skl_data, obj)
+        ob_armature = load_skl(skl_data, obj)
+
+    if "SEQB" in cpj_data:
+        for seq_byte_data in cpj_data["SEQB"]:
+            seq_data = Seq.from_bytes(seq_byte_data)
+
+            load_seq(seq_data, obj, ob_armature)
 
     # Load Model Actor Configuation data
     # Unlike other chunks, there has to be at least 1 MAC chunk
@@ -324,7 +334,6 @@ def load_skl(skl_data, bl_object):
 
     bone_datas = skl_data.data_block.bones
 
-    print("\n Processing bone data \n")
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
     edit_bones = ob_armature.data.edit_bones
 
@@ -377,25 +386,26 @@ def load_skl(skl_data, bl_object):
     bpy.ops.pose.armature_apply(selected=False)
 
     # Pass 4: Try to connect bones that are in range of each other
-    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-    for bone in edit_bones:
-        if bone.parent != None:
-            vec = bone.parent.head - bone.head
-            if abs(vec.length - bone.parent.length) < 0.001:
-                bone.parent.tail = bone.head
-                bone.use_connect = True
+    # This breaks animations, especially translations because we change the direction the bone points to
+    #bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+    #for bone in edit_bones:
+    #    if bone.parent != None:
+    #        vec = bone.parent.head - bone.head
+    #        if abs(vec.length - bone.parent.length) < 0.001:
+    #            bone.parent.tail = bone.head
+    #            bone.use_connect = True
 
-    # Align tails of bones at the end of a bone chain
-    for index, no_child in enumerate(has_no_child):
-        if not no_child:
-            continue
-        bone = edit_bones[created_bones[index]]
+    ## Align tails of bones at the end of a bone chain
+    #for index, no_child in enumerate(has_no_child):
+    #    if not no_child:
+    #        continue
+    #    bone = edit_bones[created_bones[index]]
 
-        if bone.use_connect:
-            old_length = bone.length
-            vec = bone.head - bone.parent.head
-            bone.tail = bone.head + vec
-            bone.length = old_length
+    #    if bone.use_connect:
+    #        old_length = bone.length
+    #        vec = bone.head - bone.parent.head
+    #        bone.tail = bone.head + vec
+    #        bone.length = old_length
 
     # Pass 5: Apply Vertex Groups and Weights
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
@@ -433,6 +443,84 @@ def load_skl(skl_data, bl_object):
     mod = bl_object.modifiers.new("Armature", 'ARMATURE')
     mod.object = ob_armature
     ob_armature.show_in_front = True
+
+    return ob_armature
+
+def load_seq(seq_data, obj, armature_obj):
+    scene = bpy.context.scene
+    start_frame = scene.frame_start
+
+    # TODO figure out what to do if different seq bits have different play rates (fps)
+    print(seq_data.play_rate)
+    scene.render.fps = int(seq_data.play_rate)
+
+    obj.animation_data_create()
+    armature_obj.animation_data_create()
+
+    action = bpy.data.actions.new(seq_data.name)
+
+    obj.animation_data.action = action
+    armature_obj.animation_data.action = action
+
+    # TODO
+    #events = seq_data.data_block.events
+
+    frames = seq_data.data_block.frames
+
+    bone_info = seq_data.data_block.bone_info
+    bone_rot_data = seq_data.data_block.bone_rotate
+    bone_scale_data = seq_data.data_block.bone_scale
+    bone_trans_data = seq_data.data_block.bone_translate
+
+    bpy.ops.object.mode_set(mode='POSE', toggle=False)
+
+    for i, frame in enumerate(frames):
+        scene.frame_current = start_frame + i
+
+        for rot_idx in range(frame.num_bone_rotate):
+            bone_rot = bone_rot_data[frame.first_bone_rotate + rot_idx]
+
+            bone_name = bone_info[bone_rot.bone_index].name
+
+            bone = armature_obj.pose.bones[bone_name]
+
+            # Convert values to radians
+            # 180 degrees
+            # 32768 is 180 degrees in the compressed 16bit value from roll,pitch, and yaw.
+            x = bone_rot.pitch * pi / 32768
+            y = bone_rot.yaw * pi / 32768
+            z = bone_rot.roll * pi / 32768
+
+            euler_rot = mathutils.Euler((x,y,z), 'XYZ')
+            bone.rotation_quaternion = euler_rot.to_quaternion()
+
+            bone.keyframe_insert("rotation_quaternion")
+
+        for scale_idx in range(frame.num_bone_scale):
+            bone_scale = bone_scale_data[frame.first_bone_scale + scale_idx]
+
+            bone_name = bone_info[bone_scale.bone_index].name
+
+            bone = armature_obj.pose.bones[bone_name]
+
+            scale = bone_scale.scale
+            bone.scale = (scale.x, scale.y, scale.z)
+
+            bone.keyframe_insert("scale")
+
+        for trans_idx in range(frame.num_bone_translate):
+            bone_trans = bone_trans_data[frame.first_bone_translate + trans_idx]
+
+            bone_name = bone_info[bone_trans.bone_index].name
+
+            bone = armature_obj.pose.bones[bone_name]
+
+            trans = bone_trans.translate
+            bone.location = (trans.x, trans.y, trans.z)
+
+            bone.keyframe_insert("location")
+
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
 def load_mac(mac_data):
     # TODO mac data loading correctly
