@@ -319,11 +319,12 @@ def load_skl(skl_data, bl_object):
 
     # Pass 1: Create bones
     for bone_data in bone_datas:
+
         working_bone = edit_bones.new(bone_data.name)
         # temp head and tail, these get set for real
         # once the parent is set
         working_bone.head = (0, 0, 0)
-        working_bone.tail = (1, 2, 3)   
+        working_bone.tail = (0, 0, bone_data.length)   
 
         #created_bones.append(working_bone)
 
@@ -352,9 +353,8 @@ def load_skl(skl_data, bl_object):
         # This assumes that the rotate method maintains vector scale
         # and that bone.head/tail is compatable with Mathutils.Vector
         bhv = bone_data.base_translate
-        bone.head = (bhv.x, -bhv.z, bhv.y)
         bone_vec = mathutils.Vector((bhv.x, -bhv.z, bhv.y + bone_data.length))
-        #bone_vec.rotate(bone_quat)
+        bone_vec.rotate(bone_quat)
         bone_vec = bone.head + bone_vec
         bone.tail = bone_vec
 
@@ -398,7 +398,7 @@ def load_skl(skl_data, bl_object):
             bone_data.base_rotate.v.y,
             bone_data.base_rotate.v.z
         ))
-        pose_bone.rotation_quaternion = bone_quat
+        #pose_bone.rotation_quaternion = bone_quat
 
         bone_scl = bone_data.base_scale
         pose_bone.scale = (bone_scl.x, bone_scl.y, bone_scl.z)
