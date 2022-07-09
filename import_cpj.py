@@ -274,8 +274,6 @@ def load_srf(srf_data, mesh_data):
         glaze_func_layer.data[i].value = tri.glaze_func
 
 # Load skeleton bones as blender armatures
-
-
 def load_skl(skl_data, bl_object):
     # Bones are handled in multiple passes since their
     # transforms are parent sensitive
@@ -283,7 +281,7 @@ def load_skl(skl_data, bl_object):
 
     # create armature first lol
     # bl_obj.new(name, armature id)
-    # 
+    #
     # this is obj armature
     # then it needs to be a child of bl_object
     # first, create new armature data in bpy.data
@@ -297,17 +295,12 @@ def load_skl(skl_data, bl_object):
 
     armature_data = bpy.data.armatures.new(name)
     ob_armature = bpy.data.objects.new(name, armature_data)
-    
+
     scene = bpy.context.scene
     scene.collection.objects.link(ob_armature)
-    ob_armature.parent = bl_object
     bpy.context.view_layer.objects.active = ob_armature
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
     edit_bones = ob_armature.data.edit_bones
-
-    #scene = bpy.context.scene
-    #scene.collection.objects.link(obj)
-    #
 
     # This entire scheme assumes the indexes in createdBones,
     # obArmature.pose.bones, and boneData.parent_index all point
@@ -317,46 +310,41 @@ def load_skl(skl_data, bl_object):
     created_bones = []
     bone_datas = skl_data.data_block.bones
 
-    # Pass 1: Create bones
+    print("\n Processing bone data \n")
+
+    # Pass 1: Create bones and vertex groups
     for bone_data in bone_datas:
         working_bone = edit_bones.new(bone_data.name)
         # temp head and tail, these get set for real
         # once the parent is set
         working_bone.head = (0, 0, 0)
-        working_bone.tail = (1, 2, 3)   
+        working_bone.tail = (0, 0, 1)
 
+        bl_object.vertex_groups.new(name=bone_data.name)
         #created_bones.append(working_bone)
 
     # Pass 2: Set bone parents
-    for bone_index in range(len(bone_datas)):
-        bone_data = bone_datas[bone_index]
+    for bone_index, bone_data in enumerate(bone_datas):
         parent_index = bone_data.parent_index
         bone = edit_bones[bone_index]
 
+        print(bone.name)
+
         if parent_index >= 0:  # -1 is root bone/no parent
-            bone.parent = edit_bones[parent_index]
-            bone.use_connect = True
+            parent_bone = edit_bones[parent_index]
+            bone.parent = parent_bone
+            #bone.use_connect = True
+            bone.head = parent_bone.head
+        else:
+            # There's probably a more succinct to express this math, but
+            # I trust it's correct, so I'm doing it
+            # This assumes that the rotate method maintains vector scale
+            # and that bone.head/tail is compatable with Mathutils.Vector
+            bhv = bone_data.base_translate
+            bone.head = (bhv.x, -bhv.z, bhv.y)
 
-        # Now that parent is set, head/tail can be placed
-        # uh... I think
-        # Recreating quat in a way blender recognizes
-        bone_quat = mathutils.Quaternion((
-            bone_data.base_rotate.s,
-            bone_data.base_rotate.v.x,
-            bone_data.base_rotate.v.y,
-            bone_data.base_rotate.v.z
-        ))
-
-        # There's probably a more succinct to express this math, but
-        # I trust it's correct, so I'm doing it
-        # This assumes that the rotate method maintains vector scale
-        # and that bone.head/tail is compatable with Mathutils.Vector
-        bhv = bone_data.base_translate
-        bone.head = (bhv.x, -bhv.z, bhv.y)
-        bone_vec = mathutils.Vector((bhv.x, -bhv.z, bhv.y + bone_data.length))
-        #bone_vec.rotate(bone_quat)
-        bone_vec = bone.head + bone_vec
-        bone.tail = bone_vec
+        bone.tail = bone.head + mathutils.Vector((0.0, 0.0, 1.0))
+        bone.length = bone_data.length
 
     # switch to pose mode, and probably also
     # add edit bones to the pose? or just make them
@@ -376,20 +364,15 @@ def load_skl(skl_data, bl_object):
     # and made of lies, apparently?
 
     # Pass 3: Transform bones
-    # There end up being more pose bones than bone datas,
-    # somehow. Maybe because the root bone doesn't count?
-    # idk add a qualifier to it so if it's out of range
-    # on ob_armature.pose.bones it just continues
-    for bone_index in range(len(bone_datas)):
-
-        if not (bone_index in ob_armature.pose.bones.keys()):
-            continue
+    for bone_index, bone_data in enumerate(bone_datas):
 
         pose_bone = ob_armature.pose.bones[bone_index]
-        bone_data = bone_datas[bone_index]
 
-        bone_trans = bone_data.base_translate
-        pose_bone.location = (bone_trans.x, -bone_trans.z, bone_trans.y)
+        if pose_bone.parent != None:
+            # We have already set the correct position for non parented bones.
+            # So only set the location for bones that have parents here.
+            bone_trans = bone_data.base_translate
+            pose_bone.location = (bone_trans.x, bone_trans.y, bone_trans.z)
 
         # Recreating quat in a way blender recognizes
         bone_quat = mathutils.Quaternion((
@@ -405,8 +388,6 @@ def load_skl(skl_data, bl_object):
 
     # Finally, set current pose as rest pose
     bpy.ops.pose.armature_apply(selected=False)
-    return
-
 
     # Pass 4: Apply Vertex Groups and Weights
     # This loop gets to be n^2 because it does 2 things
@@ -414,37 +395,34 @@ def load_skl(skl_data, bl_object):
     # Do we need to add verticies to the armature too?
     # Or can we just piggyback off of the geo's like I've been doing?
     # Documentation implies the first one...
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
-    weight_shift = 0
     vertex_data = skl_data.data_block.verts
     weight_data = skl_data.data_block.weights
-    
-    for vert_index in range(len(bl_object.verticies)):
-        vertex = bl_object.verticies[vert_index]
-        vert_shift = vert_index + weight_shift
 
-        for group_index in range(vertex_data[vert_index].num_weights):
-            # add group to vertex.groups
-            # index is the relative index of the weight
-            vertex.groups[group_index] = bpy.context.active_object.vertex_groups.new(
-                name=f'{vert_index}-{group_index}'
-            )
+    for vert_index, vertex in enumerate(bl_object.data.vertices):
+        num_weights = vertex_data[vert_index].num_weights
+        first_weight_idx =  vertex_data[vert_index].first_weight
 
-            new_weight = weight_data[group_index + vert_shift].weight_factor
-            vertex.groups[group_index].weight = new_weight
+        for group_offset in range(num_weights):
+            weight = weight_data[first_weight_idx + group_offset]
 
-            # somehow? add bone at
-            #   edit_bones[weight_data[local_weight_index].bone_index] to the
-            #   vertex/group
-            # wait... is that even a thing? I'm not sure...
-            # And something might happen with weight_data[local_weight_index].offset_pos
+            group_name = edit_bones[weight.bone_index].name
+
+            vg = bl_object.vertex_groups.get(group_name)
+            vg.add((vert_index,), weight.weight_factor, 'REPLACE')
+
+            # TODO I don't have any clue on what the offset_pos is supposed to be used for currently
+            # Perhaps it is the location of the vertex relative to the bone position or something?
+
+            #off_pos = weight.offset_pos
+            #vec = (off_pos.x, off_pos.y, off_pos.z)
+            #if (sum(vec) != 0):
+            #    print("Got bone weight offset that wasn't zero!")
+            #    print(vec)
 
     # Pass 5: Mount Points
     # but that can be later
-
-    # Finally, set current pose as rest pose
-    bpy.ops.pose.armature_apply(selected=False)
-
 
 def load_mac(mac_data):
     # TODO mac data loading correctly
