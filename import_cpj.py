@@ -273,21 +273,38 @@ def load_srf(srf_data, mesh_data):
         glaze_index_layer.data[i].value = tri.glaze_tex_index
         glaze_func_layer.data[i].value = tri.glaze_func
 
+def process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child):
+    bone_data = bone_datas[bone_index]
+
+    parent_index = bone_data.parent_index
+    bone = edit_bones[created_bones[bone_index]]
+
+    if parent_index >= 0:  # -1 is root bone/no parent
+        parent_bone = edit_bones[created_bones[parent_index]]
+        bone.parent = parent_bone
+
+        if has_processed_parents[parent_index] == False:
+            process_bone(parent_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child)
+
+        has_no_child[parent_index] = False
+        #bone.use_connect = True
+        bone.head = parent_bone.head
+    else:
+        # There's probably a more succinct to express this math, but
+        # I trust it's correct, so I'm doing it
+        # This assumes that the rotate method maintains vector scale
+        # and that bone.head/tail is compatable with Mathutils.Vector
+        bhv = bone_data.base_translate
+        bone.head = (bhv.x, -bhv.z, bhv.y)
+
+    has_processed_parents[bone_index] = True
+    bone.tail = bone.head + mathutils.Vector((0.0, 0.0, 1.0))
+    bone.length = bone_data.length
+
 # Load skeleton bones as blender armatures
 def load_skl(skl_data, bl_object):
     # Bones are handled in multiple passes since their
     # transforms are parent sensitive
-    # skl.yaml is the KaiTai parser source
-
-    # create armature first lol
-    # bl_obj.new(name, armature id)
-    #
-    # this is obj armature
-    # then it needs to be a child of bl_object
-    # first, create new armature data in bpy.data
-    # then use bpy.data.objects.new(name, armature_data)
-    # to create ob_armature
-    # then make bl_object ob_armature's parent
     name = "No_name_defined"
 
     if hasattr(skl_data, 'name'):
@@ -299,18 +316,17 @@ def load_skl(skl_data, bl_object):
     scene = bpy.context.scene
     scene.collection.objects.link(ob_armature)
     bpy.context.view_layer.objects.active = ob_armature
-    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-    edit_bones = ob_armature.data.edit_bones
 
-    # This entire scheme assumes the indexes in createdBones,
-    # obArmature.pose.bones, and boneData.parent_index all point
-    # to the same bone. Which they should. Yeah.
-
-    #can probably get away with just using edit bones?
+    # We need to save the bone names in an list to ensure their index is preserved.
+    # Blender will rearrange the bone arrays when parenting bones.
+    # So the root bone will always be index zero and so on.
     created_bones = []
+
     bone_datas = skl_data.data_block.bones
 
     print("\n Processing bone data \n")
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+    edit_bones = ob_armature.data.edit_bones
 
     # Pass 1: Create bones and vertex groups
     for bone_data in bone_datas:
@@ -320,53 +336,24 @@ def load_skl(skl_data, bl_object):
         working_bone.head = (0, 0, 0)
         working_bone.tail = (0, 0, 1)
 
-        bl_object.vertex_groups.new(name=bone_data.name)
-        #created_bones.append(working_bone)
+        bl_object.vertex_groups.new(name=working_bone.name)
+        # Save name here as the bone variable will point to an invalid bone when Blender shuffles the bone order
+        created_bones.append(working_bone.name)
 
     # Pass 2: Set bone parents
-    for bone_index, bone_data in enumerate(bone_datas):
-        parent_index = bone_data.parent_index
-        bone = edit_bones[bone_index]
+    has_processed_parents = [False] * len(bone_datas)
+    has_no_child = [True] * len(bone_datas)
 
-        print(bone.name)
+    for bone_index in range(len(bone_datas)):
+        process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child)
 
-        if parent_index >= 0:  # -1 is root bone/no parent
-            parent_bone = edit_bones[parent_index]
-            bone.parent = parent_bone
-            #bone.use_connect = True
-            bone.head = parent_bone.head
-        else:
-            # There's probably a more succinct to express this math, but
-            # I trust it's correct, so I'm doing it
-            # This assumes that the rotate method maintains vector scale
-            # and that bone.head/tail is compatable with Mathutils.Vector
-            bhv = bone_data.base_translate
-            bone.head = (bhv.x, -bhv.z, bhv.y)
-
-        bone.tail = bone.head + mathutils.Vector((0.0, 0.0, 1.0))
-        bone.length = bone_data.length
-
-    # switch to pose mode, and probably also
-    # add edit bones to the pose? or just make them
-    # not be edit bones
-
-    # TRANSFORM BONES BEFORE GOING TO POSE
-
-    # So basically, use rot, scale, pos, and length of data
-    # and center, head, and length of edit_bone to place the bone
-    # correctly. Then apply them in the bose just to be safe
-
-    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
     bpy.ops.object.mode_set(mode='POSE', toggle=False)
-
-
-    # Pass 2-and-a-half: Generate Bones because edit bones are fake
-    # and made of lies, apparently?
-
     # Pass 3: Transform bones
     for bone_index, bone_data in enumerate(bone_datas):
 
-        pose_bone = ob_armature.pose.bones[bone_index]
+        bone_name = created_bones[bone_index]
+
+        pose_bone = ob_armature.pose.bones[bone_name]
 
         if pose_bone.parent != None:
             # We have already set the correct position for non parented bones.
@@ -389,12 +376,28 @@ def load_skl(skl_data, bl_object):
     # Finally, set current pose as rest pose
     bpy.ops.pose.armature_apply(selected=False)
 
-    # Pass 4: Apply Vertex Groups and Weights
-    # This loop gets to be n^2 because it does 2 things
+    # Pass 4: Try to connect bones that are in range of each other
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+    for bone in edit_bones:
+        if bone.parent != None:
+            vec = bone.parent.head - bone.head
+            if abs(vec.length - bone.parent.length) < 0.001:
+                bone.parent.tail = bone.head
+                bone.use_connect = True
 
-    # Do we need to add verticies to the armature too?
-    # Or can we just piggyback off of the geo's like I've been doing?
-    # Documentation implies the first one...
+    # Align tails of bones at the end of a bone chain
+    for index, no_child in enumerate(has_no_child):
+        if not no_child:
+            continue
+        bone = edit_bones[created_bones[index]]
+
+        if bone.use_connect:
+            old_length = bone.length
+            vec = bone.head - bone.parent.head
+            bone.tail = bone.head + vec
+            bone.length = old_length
+
+    # Pass 5: Apply Vertex Groups and Weights
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
     vertex_data = skl_data.data_block.verts
@@ -407,7 +410,7 @@ def load_skl(skl_data, bl_object):
         for group_offset in range(num_weights):
             weight = weight_data[first_weight_idx + group_offset]
 
-            group_name = edit_bones[weight.bone_index].name
+            group_name = created_bones[weight.bone_index]
 
             vg = bl_object.vertex_groups.get(group_name)
             vg.add((vert_index,), weight.weight_factor, 'REPLACE')
@@ -421,8 +424,15 @@ def load_skl(skl_data, bl_object):
             #    print("Got bone weight offset that wasn't zero!")
             #    print(vec)
 
-    # Pass 5: Mount Points
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+    # Pass 6: Mount Points
+    # TODO
     # but that can be later
+
+    # Hook up the armature to the mesh object
+    mod = bl_object.modifiers.new("Armature", 'ARMATURE')
+    mod.object = ob_armature
+    ob_armature.show_in_front = True
 
 def load_mac(mac_data):
     # TODO mac data loading correctly
