@@ -22,12 +22,14 @@
 import colorsys
 import bpy
 import bmesh
+import mathutils
 
 from cpj_utils import *
 
 from formats.frm import Frm
 from formats.geo import Geo
 from formats.srf import Srf
+from formats.skl import Skl
 from formats.mac import Mac
 
 # ----------------------------------------------------------------------------
@@ -44,6 +46,7 @@ def load(context, filepath):
 
     # Load in all geometry data
     # TODO load in more than one GEO entry if there are any
+    # Unlike other chunks, there has to be at least 1 GEO chunk
     geo_data = Geo.from_bytes(cpj_data["GEOB"][0])
 
     obj = load_geo(geo_data)
@@ -54,17 +57,27 @@ def load(context, filepath):
 
     # Load in all surface data
     # TODO load in more than one SRF entry if there are any
-    srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
+    if "SRFB" in cpj_data:
+        srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
 
-    load_srf(srf_data, obj.data)
+        load_srf(srf_data, obj.data)
 
     # Load vertex animation data as shape keys
     # TODO load in more than one FRM entry if there are any
-    frm_data = Frm.from_bytes(cpj_data["FRMB"][0])
+    if "FRMB" in cpj_data:
+        frm_data = Frm.from_bytes(cpj_data["FRMB"][0])
 
-    load_frm(frm_data, obj)
+        load_frm(frm_data, obj)
+
+    # Load in all skeleton data
+    # TODO load in more that one SKL entry if there are any
+    if "SKLB" in cpj_data:
+        skl_data = Skl.from_bytes(cpj_data["SKLB"][0])
+
+        load_skl(skl_data, obj)
 
     # Load Model Actor Configuation data
+    # Unlike other chunks, there has to be at least 1 MAC chunk
     mac_data = Mac.from_bytes(cpj_data["MACB"][0])
 
     load_mac(mac_data)
@@ -245,6 +258,8 @@ def load_srf(srf_data, mesh_data):
     bm.to_mesh(mesh_data)
     bm.free()
 
+
+
     flags_layer = mesh_data.attributes["flags"]
     smooth_group_layer = mesh_data.attributes["smooth_group"]
     alpha_level_layer = mesh_data.attributes["alpha_level"]
@@ -257,6 +272,167 @@ def load_srf(srf_data, mesh_data):
         alpha_level_layer.data[i].value = tri.alpha_level
         glaze_index_layer.data[i].value = tri.glaze_tex_index
         glaze_func_layer.data[i].value = tri.glaze_func
+
+def process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child):
+    bone_data = bone_datas[bone_index]
+
+    parent_index = bone_data.parent_index
+    bone = edit_bones[created_bones[bone_index]]
+
+    if parent_index >= 0:  # -1 is root bone/no parent
+        parent_bone = edit_bones[created_bones[parent_index]]
+        bone.parent = parent_bone
+
+        if has_processed_parents[parent_index] == False:
+            process_bone(parent_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child)
+
+        has_no_child[parent_index] = False
+        #bone.use_connect = True
+        bone.head = parent_bone.head
+    else:
+        # There's probably a more succinct to express this math, but
+        # I trust it's correct, so I'm doing it
+        # This assumes that the rotate method maintains vector scale
+        # and that bone.head/tail is compatable with Mathutils.Vector
+        bhv = bone_data.base_translate
+        bone.head = (bhv.x, -bhv.z, bhv.y)
+
+    has_processed_parents[bone_index] = True
+    bone.tail = bone.head + mathutils.Vector((0.0, 0.0, 1.0))
+    bone.length = bone_data.length
+
+# Load skeleton bones as blender armatures
+def load_skl(skl_data, bl_object):
+    # Bones are handled in multiple passes since their
+    # transforms are parent sensitive
+    name = "No_name_defined"
+
+    if hasattr(skl_data, 'name'):
+        name = skl_data.name
+
+    armature_data = bpy.data.armatures.new(name)
+    ob_armature = bpy.data.objects.new(name, armature_data)
+
+    scene = bpy.context.scene
+    scene.collection.objects.link(ob_armature)
+    bpy.context.view_layer.objects.active = ob_armature
+
+    # We need to save the bone names in an list to ensure their index is preserved.
+    # Blender will rearrange the bone arrays when parenting bones.
+    # So the root bone will always be index zero and so on.
+    created_bones = []
+
+    bone_datas = skl_data.data_block.bones
+
+    print("\n Processing bone data \n")
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+    edit_bones = ob_armature.data.edit_bones
+
+    # Pass 1: Create bones and vertex groups
+    for bone_data in bone_datas:
+        working_bone = edit_bones.new(bone_data.name)
+        # temp head and tail, these get set for real
+        # once the parent is set
+        working_bone.head = (0, 0, 0)
+        working_bone.tail = (0, 0, 1)
+
+        bl_object.vertex_groups.new(name=working_bone.name)
+        # Save name here as the bone variable will point to an invalid bone when Blender shuffles the bone order
+        created_bones.append(working_bone.name)
+
+    # Pass 2: Set bone parents
+    has_processed_parents = [False] * len(bone_datas)
+    has_no_child = [True] * len(bone_datas)
+
+    for bone_index in range(len(bone_datas)):
+        process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child)
+
+    bpy.ops.object.mode_set(mode='POSE', toggle=False)
+    # Pass 3: Transform bones
+    for bone_index, bone_data in enumerate(bone_datas):
+
+        bone_name = created_bones[bone_index]
+
+        pose_bone = ob_armature.pose.bones[bone_name]
+
+        if pose_bone.parent != None:
+            # We have already set the correct position for non parented bones.
+            # So only set the location for bones that have parents here.
+            bone_trans = bone_data.base_translate
+            pose_bone.location = (bone_trans.x, bone_trans.y, bone_trans.z)
+
+        # Recreating quat in a way blender recognizes
+        bone_quat = mathutils.Quaternion((
+            bone_data.base_rotate.s,
+            bone_data.base_rotate.v.x,
+            bone_data.base_rotate.v.y,
+            bone_data.base_rotate.v.z
+        ))
+        pose_bone.rotation_quaternion = bone_quat
+
+        bone_scl = bone_data.base_scale
+        pose_bone.scale = (bone_scl.x, bone_scl.y, bone_scl.z)
+
+    # Finally, set current pose as rest pose
+    bpy.ops.pose.armature_apply(selected=False)
+
+    # Pass 4: Try to connect bones that are in range of each other
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+    for bone in edit_bones:
+        if bone.parent != None:
+            vec = bone.parent.head - bone.head
+            if abs(vec.length - bone.parent.length) < 0.001:
+                bone.parent.tail = bone.head
+                bone.use_connect = True
+
+    # Align tails of bones at the end of a bone chain
+    for index, no_child in enumerate(has_no_child):
+        if not no_child:
+            continue
+        bone = edit_bones[created_bones[index]]
+
+        if bone.use_connect:
+            old_length = bone.length
+            vec = bone.head - bone.parent.head
+            bone.tail = bone.head + vec
+            bone.length = old_length
+
+    # Pass 5: Apply Vertex Groups and Weights
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+
+    vertex_data = skl_data.data_block.verts
+    weight_data = skl_data.data_block.weights
+
+    for vert_index, vertex in enumerate(bl_object.data.vertices):
+        num_weights = vertex_data[vert_index].num_weights
+        first_weight_idx =  vertex_data[vert_index].first_weight
+
+        for group_offset in range(num_weights):
+            weight = weight_data[first_weight_idx + group_offset]
+
+            group_name = created_bones[weight.bone_index]
+
+            vg = bl_object.vertex_groups.get(group_name)
+            vg.add((vert_index,), weight.weight_factor, 'REPLACE')
+
+            # TODO I don't have any clue on what the offset_pos is supposed to be used for currently
+            # Perhaps it is the location of the vertex relative to the bone position or something?
+
+            #off_pos = weight.offset_pos
+            #vec = (off_pos.x, off_pos.y, off_pos.z)
+            #if (sum(vec) != 0):
+            #    print("Got bone weight offset that wasn't zero!")
+            #    print(vec)
+
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+    # Pass 6: Mount Points
+    # TODO
+    # but that can be later
+
+    # Hook up the armature to the mesh object
+    mod = bl_object.modifiers.new("Armature", 'ARMATURE')
+    mod.object = ob_armature
+    ob_armature.show_in_front = True
 
 def load_mac(mac_data):
     # TODO mac data loading correctly
