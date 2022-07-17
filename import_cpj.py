@@ -268,8 +268,6 @@ def load_srf(srf_data, mesh_data):
     bm.to_mesh(mesh_data)
     bm.free()
 
-
-
     flags_layer = mesh_data.attributes["flags"]
     smooth_group_layer = mesh_data.attributes["smooth_group"]
     alpha_level_layer = mesh_data.attributes["alpha_level"]
@@ -413,14 +411,25 @@ def load_skl(skl_data, bl_object):
     vertex_data = skl_data.data_block.verts
     weight_data = skl_data.data_block.weights
 
+    # We will create a base shape key to to store the shape described by the bone vertex offsets.
+    # NOTE that this assumes that there are not vertex animations if there is a skeleton.
+    # Don't know if this is always true in the cannibal format or not...
+    bl_object.shape_key_add(name='Basis')
+    sk_arm = bl_object.shape_key_add(name='Armature offsets')
+    sk_arm.value = 1.0
+    bl_object.data.shape_keys.use_relative = True
+
     for vert_index, vertex in enumerate(bl_object.data.vertices):
         num_weights = vertex_data[vert_index].num_weights
         first_weight_idx =  vertex_data[vert_index].first_weight
+
+        vert_co = mathutils.Vector((0.0, 0.0, 0.0))
 
         for group_offset in range(num_weights):
             weight = weight_data[first_weight_idx + group_offset]
 
             group_name = created_bones[weight.bone_index]
+            bone = edit_bones[group_name]
 
             vg = bl_object.vertex_groups.get(group_name)
             vg.add((vert_index,), weight.weight_factor, 'REPLACE')
@@ -428,11 +437,13 @@ def load_skl(skl_data, bl_object):
             # TODO I don't have any clue on what the offset_pos is supposed to be used for currently
             # Perhaps it is the location of the vertex relative to the bone position or something?
 
-            #off_pos = weight.offset_pos
-            #vec = (off_pos.x, off_pos.y, off_pos.z)
-            #if (sum(vec) != 0):
-            #    print("Got bone weight offset that wasn't zero!")
-            #    print(vec)
+            off_pos = weight.offset_pos
+            vec = mathutils.Vector((off_pos.x, off_pos.y, off_pos.z))
+            vec * weight.weight_factor
+
+            vert_co += bone.matrix @ vec
+
+        sk_arm.data[vert_index].co = vert_co
 
     bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
     # Pass 6: Mount Points
@@ -454,12 +465,13 @@ def load_seq(seq_data, obj, armature_obj):
     print(seq_data.play_rate)
     scene.render.fps = int(seq_data.play_rate)
 
-    obj.animation_data_create()
+    # TODO handle vertex animations
+    #obj.animation_data_create()
     armature_obj.animation_data_create()
 
     action = bpy.data.actions.new(seq_data.name)
 
-    obj.animation_data.action = action
+    #obj.animation_data.action = action
     armature_obj.animation_data.action = action
 
     # TODO
