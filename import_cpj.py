@@ -434,14 +434,17 @@ def load_skl(skl_data, bl_object):
             vg = bl_object.vertex_groups.get(group_name)
             vg.add((vert_index,), weight.weight_factor, 'REPLACE')
 
-            # TODO I don't have any clue on what the offset_pos is supposed to be used for currently
-            # Perhaps it is the location of the vertex relative to the bone position or something?
-
             off_pos = weight.offset_pos
             vec = mathutils.Vector((off_pos.x, off_pos.y, off_pos.z))
-            vec * weight.weight_factor
 
-            vert_co += bone.matrix @ vec
+            # Convert coordniates to world space
+            vec = bone.matrix @ vec
+
+            if num_weights > 1:
+                # Only mutiply by the weight if there is more than one weight group.
+                vec = vec * weight.weight_factor
+
+            vert_co += vec
 
         sk_arm.data[vert_index].co = vert_co
 
