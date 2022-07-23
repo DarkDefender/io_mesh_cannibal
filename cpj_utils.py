@@ -730,7 +730,7 @@ def create_skl_byte_array(name, bones, verts, weights, mounts):
         # offset_name
         byte_arr += struct.pack("I", bone_str_offsets[i])
         # parent_index
-        byte_arr += struct.pack("I", bone_data[1])
+        byte_arr += struct.pack("i", bone_data[1])
         # base_scale
         for x in range(3):
             base_scale = bone_data[2]

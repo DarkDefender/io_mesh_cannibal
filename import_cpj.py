@@ -292,16 +292,18 @@ def process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processe
         bone.parent = parent_bone
 
         if has_processed_parents[parent_index] == False:
+            # Ensure that root parent bone is in the correct position.
             process_bone(parent_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child)
 
         has_no_child[parent_index] = False
         #bone.use_connect = True
+        # Set position to partent bone.
+        # The relative transform will be handled in pose mode in a later step.
         bone.head = parent_bone.head
     else:
-        # There's probably a more succinct to express this math, but
-        # I trust it's correct, so I'm doing it
-        # This assumes that the rotate method maintains vector scale
-        # and that bone.head/tail is compatable with Mathutils.Vector
+        # Set root bone position.
+        # We need to do it here because otherwise the child bone transform
+        # relations will not be correct.
         bhv = bone_data.base_translate
         bone.head = (bhv.x, -bhv.z, bhv.y)
 
@@ -375,6 +377,7 @@ def load_skl(skl_data, bl_object):
             bone_data.base_rotate.v.y,
             bone_data.base_rotate.v.z
         ))
+
         pose_bone.rotation_quaternion = bone_quat
 
         bone_scl = bone_data.base_scale

@@ -23,11 +23,17 @@ import struct
 import bpy
 
 from mathutils import Vector
+from mathutils import Matrix
 import bmesh
 
 from cpj_utils import *
 
 # ----------------------------------------------------------------------------
+def quat_to_cpj_quat(quat):
+    # cpj_quat = x,y,z,w
+    cpj_quat = [quat[1], quat[2], quat[3], quat[0]]
+    return cpj_quat
+
 def save(context, filepath):
 
     apply_modifiers = True
@@ -67,6 +73,10 @@ def save(context, filepath):
             data_chunks.append(create_srf_data(obj, uv_name, bm, loops))
         bm.free()
 
+        if obj_data[2] != "":
+            armature = bpy.data.objects[obj_data[2]]
+            data_chunks.append(create_skl_data(obj, me, armature))
+
         if apply_modifiers:
             obj.evaluated_get(depsgraph).to_mesh_clear()
         else:
@@ -94,6 +104,7 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
     list_index = 0
 
     mesh_object_name = ""
+    armature_name = ""
     uv_names = []
     found_primary_uv = False
     has_frames = False
@@ -157,6 +168,12 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                         if com[1] == "0":
                             found_primary_uv = True
                         uv_names.append(com[2].strip('"'))
+                    case "SetSkeleton":
+                        armature_name = com[1].strip('"')
+                        if not armature_name in bpy.data.objects:
+                            raise Exception("Error in: " + text_block_name + "\n 'SetSkeleton' object " + armature_name + " does not exist")
+                        if bpy.data.objects[armature_name].type != 'ARMATURE':
+                            raise Exception("Error in: " + text_block_name + "\n 'SetSkeleton' object " + armature_name + " is not an armature" )
                     case "SetAuthor":
                         has_author = True
                     case "SetDescription":
@@ -198,7 +215,7 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
 
     mac_byte_data = create_mac_byte_array(mac_name, section_data, command_strings)
 
-    return (mac_byte_data, mesh_object_name, uv_names)
+    return (mac_byte_data, mesh_object_name, uv_names, armature_name)
 
 def create_geo_data(geo_name, bm, loops, apply_modifiers):
     # Ensure all indices are valid and up to date
@@ -294,7 +311,7 @@ def create_srf_data(obj, uv_name, bm, loops):
     tris = []
     uv_coords = []
 
-    # TODO this only works properly with UV mat.
+    # TODO this only works properly with one UV mat.
     # we don't know which textures to pull and we can't have mutiple data layers of the same name for the mesh.
     for material in obj.data.materials:
         ref_name = ""
@@ -334,6 +351,80 @@ def create_srf_data(obj, uv_name, bm, loops):
     srf_byte_data = create_srf_byte_array(uv_name, textures, tris, uv_coords)
 
     return srf_byte_data
+
+def create_skl_data(obj, me, arm_obj):
+    bone_list = arm_obj.data.bones
+
+    bones = []
+
+    # Ensure that the armature is in its rest postion
+    old_pose_setting = arm_obj.data.pose_position
+    arm_obj.data.pose_position = 'REST'
+
+    for bone_data in bone_list:
+        bone = []
+
+        mat = bone_data.matrix_local
+
+        if bone_data.parent == None:
+            # The base transform matrix for a bone in Blender
+            base_mat = Matrix()
+            base_mat[1][1] = 0
+            base_mat[1][2] = -1
+
+            base_mat[2][1] = 1
+            base_mat[2][2] = 0
+
+            parent_index = -1
+        else:
+            base_mat = bone_data.parent.matrix_local
+            parent_index = bone_list.find(bone_data.parent.name)
+
+        diff_mat = base_mat.inverted() @ bone_data.matrix_local
+        decomp = diff_mat.decompose()
+        bone_trans = decomp[0]
+
+        bone.append(bone_data.name)
+        bone.append(parent_index)
+        bone.append(decomp[2]) # base_scale
+        bone.append(quat_to_cpj_quat(decomp[1])) # base_rotation (cpj quaternion)
+        bone.append(bone_trans) # base_translation
+        bone.append(bone_data.length)
+
+        bones.append(bone)
+
+    verts = []
+    weights = []
+
+    for vert_data in me.vertices:
+        vert = []
+        vert.append(len(vert_data.groups)) # num_weights
+        vert.append(len(weights)) # first_weight
+
+        verts.append(vert)
+
+        for group in vert_data.groups:
+            weight_data = []
+
+            bone_name = obj.vertex_groups[group.group].name
+            bone_index = bone_list.find(bone_name)
+            bone = bone_list[bone_index]
+            offset_pos = bone.matrix_local.inverted() @ vert_data.co
+
+            weight_data.append(bone_index)
+            weight_data.append(group.weight) # weight_factor
+            weight_data.append(offset_pos)
+
+            weights.append(weight_data)
+
+    # TODO mounts
+    mounts = []
+
+    skl_byte_data = create_skl_byte_array(arm_obj.name, bones, verts, weights, mounts)
+
+    arm_obj.data.pose_position = old_pose_setting
+
+    return skl_byte_data
 
 def calc_boundbox_max_min(obj):
     # Ensure that the bounding box corners are in world space coordinates
