@@ -113,7 +113,7 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
     has_descripton = False
 
     valid_autoexec_commands = ["SetAuthor", "SetDescription", "SetGeometry", "SetLodData", "SetSkeleton", "SetSurface", "AddFrames", "AddSequences"]
-    # TODO remake this list to be exclusive, IE whick types NOT to check when automatic origin and scale etc writing is implemented
+    # TODO remake this list to be exclusive, IE which types NOT to check when automatic origin and scale etc writing is implemented
     quote_check = ["SetAuthor", "SetDescription", "SetGeometry", "SetLodData", "SetSkeleton", "AddFrames", "AddSequences"]
 
     # Go through all command sections
@@ -182,6 +182,9 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                         has_frames = True
                     case "AddSequences":
                         has_seq = True
+                    case "SetLodData":
+                        print("Skipping LOD entry in MAC file!")
+                        continue
 
             command_strings.append(command)
 

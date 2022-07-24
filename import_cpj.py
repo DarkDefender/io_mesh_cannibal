@@ -208,7 +208,51 @@ def load_geo(geo_data):
         lod_lock_layer.data[i].value = vert.flags
         group_index_layer.data[i].value = vert.group_index
 
-    # TODO load mount points with empties
+    for mount in geo_data.data_block.mounts:
+        # Create an "Empty" type object as a mount
+        mount_obj = bpy.data.objects.new(mount.name, None)
+        bpy.context.scene.collection.objects.link(mount_obj)
+
+        # Setup the partent
+        parent_tri = mesh_data.polygons[mount.tri_index]
+
+        mount_obj.parent = obj
+        mount_obj.parent_type = 'VERTEX_3'
+        mount_obj.parent_vertices = parent_tri.vertices
+
+        # Calcute how much to move the mount point from the parent face center
+        v0 = mesh_data.vertices[parent_tri.vertices[0]]
+        v1 = mesh_data.vertices[parent_tri.vertices[1]]
+        v2 = mesh_data.vertices[parent_tri.vertices[2]]
+
+        mount_loc = v2.co * mount.tri_barys.x + v1.co * mount.tri_barys.y + v0.co * mount.tri_barys.z
+
+        # Make sure that "matrix_world is up to date.
+        bpy.context.view_layer.update()
+        mount_obj.matrix_world
+
+        local_coords = mount_obj.matrix_world.inverted() @ mount_loc
+
+        # Offset from parent face center
+        mount_obj.matrix_parent_inverse[0][3] = local_coords[0]
+        mount_obj.matrix_parent_inverse[1][3] = local_coords[1]
+
+        mount_obj.location.x = mount.base_translate.x
+        mount_obj.location.y = -mount.base_translate.z
+        mount_obj.location.z = mount.base_translate.y
+
+        # TODO double check that the coordinate system conversion here is correct
+        mount_obj.rotation_mode = 'QUATERNION'
+        mount_obj.rotation_quaternion[0] = mount.base_rotate.s
+        mount_obj.rotation_quaternion[1] = mount.base_rotate.v.x
+        mount_obj.rotation_quaternion[2] = -mount.base_rotate.v.z
+        mount_obj.rotation_quaternion[3] = mount.base_rotate.v.y
+
+        mount_obj.scale[0] = mount.base_scale.x
+        mount_obj.scale[1] = -mount.base_scale.z
+        mount_obj.scale[2] = mount.base_scale.y
+
+    print("mounts on geo object: " + str(len(geo_data.data_block.mounts)))
 
     return obj
 
@@ -455,6 +499,7 @@ def load_skl(skl_data, bl_object):
     # Pass 6: Mount Points
     # TODO
     # but that can be later
+    print("mounts on skl object: " + str(len(skl_data.data_block.mounts)))
 
     # Hook up the armature to the mesh object
     mod = bl_object.modifiers.new("Armature", 'ARMATURE')
