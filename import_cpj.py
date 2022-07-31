@@ -585,6 +585,7 @@ def load_seq(seq_data, obj, armature_obj):
     armature_obj.animation_data_create()
 
     action = bpy.data.actions.new(seq_data.name)
+    action.use_fake_user = True
 
     #obj.animation_data.action = action
     armature_obj.animation_data.action = action
