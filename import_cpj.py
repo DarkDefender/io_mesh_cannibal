@@ -43,64 +43,87 @@ def load(context, filepath):
 
     cpj_data = load_cpj_data(filepath)
 
-    if len(cpj_data["GEOB"]) > 1:
-        raise Exception('Importing cpjs with more than one mesh in it is not supported yet')
-        return {'CANCELLED'}
-
-    # Load in all geometry data
-    # TODO load in more than one GEO entry if there are any
-    # Unlike other chunks, there has to be at least 1 GEO chunk
-    geo_data = Geo.from_bytes(cpj_data["GEOB"][0])
-
-    obj = load_geo(geo_data)
-
-    if len(cpj_data["SRFB"]) > 1:
-        raise Exception('Importing cpjs with more than one surface in it is not supported yet')
-        return {'CANCELLED'}
-
-    # Load in all surface data
-    # TODO load in more than one SRF entry if there are any
-    if "SRFB" in cpj_data:
-        srf_data = Srf.from_bytes(cpj_data["SRFB"][0])
-
-        load_srf(srf_data, obj.data)
-
-    # Load vertex animation data as shape keys
-    # TODO load in more than one FRM entry if there are any
-    if "FRMB" in cpj_data:
-        frm_data = Frm.from_bytes(cpj_data["FRMB"][0])
-
-        load_frm(frm_data, obj)
-
-    # Load in all skeleton data
-    # TODO load in more that one SKL entry if there are any
-    ob_armature = None
-    if "SKLB" in cpj_data:
-        skl_data = Skl.from_bytes(cpj_data["SKLB"][0])
-
-        ob_armature = load_skl(skl_data, obj)
-
-    if "SEQB" in cpj_data:
-        for seq_byte_data in cpj_data["SEQB"]:
-            seq_data = Seq.from_bytes(seq_byte_data)
-
-            load_seq(seq_data, obj, ob_armature)
-
     # Load Model Actor Configuation data
     # Unlike other chunks, there has to be at least 1 MAC chunk
-    mac_data = Mac.from_bytes(cpj_data["MACB"][0])
+    if len(cpj_data["MACB"]) == 0:
+        raise ImportError("Doesn't seem to be a valid cpj file. There are no MAC chunks!")
 
-    load_mac(mac_data)
+    # Load in all geometry data
+    geo_data_dict = {}
+    for geo_byte_data in cpj_data["GEOB"]:
+        geo_data = Geo.from_bytes(geo_byte_data)
+        mesh_data, geo_mounts = load_geo(geo_data)
+        geo_data_dict[mesh_data.name] = [mesh_data, geo_mounts]
+
+    # Load in all LOD data
+    # TODO
+
+    # Load in all surface data
+    srf_data_dict = {}
+    for srf_byte_data in cpj_data["SRFB"]:
+        srf_data = Srf.from_bytes(srf_byte_data)
+        srf_data_dict[srf_data.name] = srf_data
+
+    # Load in all skeleton data
+    skl_data_dict = {}
+    for skl_byte_data in cpj_data["SKLB"]:
+        skl_data = Skl.from_bytes(skl_byte_data)
+        arm_data = load_skl(skl_data)
+        skl_data_dict[skl_data.name] = arm_data
+
+    for mac_byte_data in cpj_data["MACB"]:
+        mac_data = Mac.from_bytes(mac_byte_data)
+        mac_commands = load_mac(mac_data)
+
+        collection = bpy.data.collections.new(mac_data.name)
+        bpy.context.scene.collection.children.link(collection)
+
+        # There must be at least one geometry object
+        if not "SetGeometry" in mac_commands:
+            raise ImportError("Doesn't seem to be a valid cpj model file. There are no GEO chunks!")
+        geo_name = mac_commands["SetGeometry"].strip('"')
+        geo_data = geo_data_dict[geo_name]
+        obj = create_mesh_obj(mac_data.name, collection, geo_data)
+
+        if "SetLodData" in mac_commands:
+            # TODO LOD
+            print("Skipping LOD entry in MAC file!")
+
+        if "SetSurface" in mac_commands:
+            srf_name = mac_commands["SetSurface"][1].strip('"')
+            srf_data = srf_data_dict[srf_name]
+            load_srf(srf_data, obj.data)
+
+        if "SetSkeleton" in mac_commands:
+            skl_name = mac_commands["SetSkeleton"].strip('"')
+            skl_data = skl_data_dict[skl_name]
+            ob_armature = hook_up_skl_to_obj(obj, skl_name, skl_data, collection)
+
+        # Load vertex animation data as shape keys
+        if "FRMB" in cpj_data and "AddFrames" in mac_commands and "NULL" in mac_commands["AddFrames"]:
+            add_basis_shape = True
+            for frm_byte_data in cpj_data["FRMB"]:
+                frm_data = Frm.from_bytes(frm_byte_data)
+
+                load_frm(frm_data, obj, add_basis_shape)
+                add_basis_shape = False
+
+        # Load in all animaiton sequences
+        if "SEQB" in cpj_data and "AddSequences" in mac_commands and "NULL" in mac_commands["AddSequences"]:
+            for seq_byte_data in cpj_data["SEQB"]:
+                seq_data = Seq.from_bytes(seq_byte_data)
+
+                load_seq(seq_data, obj, ob_armature)
 
     return {'FINISHED'}
 
-def load_frm(frm_data, obj):
+def load_frm(frm_data, obj, add_basis_shape):
     verts = obj.data.vertices
 
-    # TODO import all frames and update this function to support this
-    sk_basis = obj.shape_key_add(name='Basis')
-    sk_basis.interpolation = 'KEY_LINEAR'
-    obj.data.shape_keys.use_relative = False
+    if (add_basis_shape):
+        sk_basis = obj.shape_key_add(name='Basis')
+        sk_basis.interpolation = 'KEY_LINEAR'
+        obj.data.shape_keys.use_relative = False
 
     for frame in frm_data.data_block.frames:
         # Create new shape key
@@ -131,7 +154,6 @@ def load_frm(frm_data, obj):
             sk.data[i].co.x = pos[0]
             sk.data[i].co.y = -pos[2]
             sk.data[i].co.z = pos[1]
-
 
 def create_custom_data_layers(mesh_data):
     # NOTE: We are not using the return values from the .new functions as there
@@ -167,7 +189,6 @@ def load_geo(geo_data):
     edges = geo_data.data_block.edges
 
     #for edge in edges:
-
     tris = geo_data.data_block.triangles
 
     # Create a list of mesh faces
@@ -194,9 +215,6 @@ def load_geo(geo_data):
     mesh_data = bpy.data.meshes.new(name)
     mesh_data.from_pydata(cpj_verts, [], bl_faces)
     mesh_data.update()
-    obj = bpy.data.objects.new(name, mesh_data)
-    scene = bpy.context.scene
-    scene.collection.objects.link(obj)
 
     create_custom_data_layers(mesh_data)
 
@@ -208,10 +226,21 @@ def load_geo(geo_data):
         lod_lock_layer.data[i].value = vert.flags
         group_index_layer.data[i].value = vert.group_index
 
-    for mount in geo_data.data_block.mounts:
+    print("mounts on geo object: " + str(len(geo_data.data_block.mounts)))
+    return mesh_data, geo_data.data_block.mounts
+
+def create_mesh_obj(name, collection, geo_data):
+    mesh_data = geo_data[0]
+    geo_mounts = geo_data[1]
+
+    obj = bpy.data.objects.new(name, mesh_data)
+    scene = bpy.context.scene
+    collection.objects.link(obj)
+
+    for mount in geo_mounts:
         # Create an "Empty" type object as a mount
         mount_obj = bpy.data.objects.new(mount.name, None)
-        bpy.context.scene.collection.objects.link(mount_obj)
+        collection.objects.link(mount_obj)
 
         # Setup the partent
         parent_tri = mesh_data.polygons[mount.tri_index]
@@ -251,8 +280,6 @@ def load_geo(geo_data):
         mount_obj.scale[0] = mount.base_scale.x
         mount_obj.scale[1] = -mount.base_scale.z
         mount_obj.scale[2] = mount.base_scale.y
-
-    print("mounts on geo object: " + str(len(geo_data.data_block.mounts)))
 
     return obj
 
@@ -356,7 +383,7 @@ def process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processe
     bone.length = bone_data.length
 
 # Load skeleton bones as blender armatures
-def load_skl(skl_data, bl_object):
+def load_skl(skl_data):
     # Bones are handled in multiple passes since their
     # transforms are parent sensitive
     name = "No_name_defined"
@@ -383,15 +410,14 @@ def load_skl(skl_data, bl_object):
 
     # Pass 1: Create bones and vertex groups
     for bone_data in bone_datas:
-        working_bone = edit_bones.new(bone_data.name)
+        edit_bone = edit_bones.new(bone_data.name)
         # temp head and tail, these get set for real
         # once the parent is set
-        working_bone.head = (0, 0, 0)
-        working_bone.tail = (0, 0, 1)
+        edit_bone.head = (0, 0, 0)
+        edit_bone.tail = (0, 0, 1)
 
-        bl_object.vertex_groups.new(name=working_bone.name)
-        # Save name here as the bone variable will point to an invalid bone when Blender shuffles the bone order
-        created_bones.append(working_bone.name)
+        # Save name here as the edit_bone variable will point to an invalid bone when Blender automatically shuffles the bone order
+        created_bones.append(edit_bone.name)
 
     # Pass 2: Set bone parents
     has_processed_parents = [False] * len(bone_datas)
@@ -452,11 +478,33 @@ def load_skl(skl_data, bl_object):
     #        bone.tail = bone.head + vec
     #        bone.length = old_length
 
-    # Pass 5: Apply Vertex Groups and Weights
-    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+    # Remove armature object, we will create it later with the MAC data
+    bpy.data.objects.remove(ob_armature)
+    print("mounts on skl object: " + str(len(skl_data.data_block.mounts)))
 
     vertex_data = skl_data.data_block.verts
     weight_data = skl_data.data_block.weights
+
+    return (armature_data, created_bones, vertex_data, weight_data)
+
+def hook_up_skl_to_obj(bl_object, name, skl_data, collection):
+    armature_data = skl_data[0]
+    created_bones = skl_data[1]
+    vertex_data = skl_data[2]
+    weight_data = skl_data[3]
+
+    ob_armature = bpy.data.objects.new(name, skl_data[0])
+    edit_bones = ob_armature.data.edit_bones
+
+    scene = bpy.context.scene
+    collection.objects.link(ob_armature)
+    bpy.context.view_layer.objects.active = ob_armature
+
+    # Create Vertex Groups and Weights
+    for bone_name in created_bones:
+        bl_object.vertex_groups.new(name=bone_name)
+
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
     # We will create a base shape key to to store the shape described by the bone vertex offsets.
     # NOTE that this assumes that there are not vertex animations if there is a skeleton.
@@ -499,7 +547,6 @@ def load_skl(skl_data, bl_object):
     # Pass 6: Mount Points
     # TODO
     # but that can be later
-    print("mounts on skl object: " + str(len(skl_data.data_block.mounts)))
 
     # Hook up the armature to the mesh object
     mod = bl_object.modifiers.new("Armature", 'ARMATURE')
@@ -586,18 +633,40 @@ def load_seq(seq_data, obj, armature_obj):
     bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
 def load_mac(mac_data):
-    # TODO mac data loading correctly
+    autoexec_commands = {}
+
+    allowed_dupes = ["AddFrames", "AddSequences"]
 
     mac_text = bpy.data.texts.new("cpj_" + mac_data.name)
     for sec in mac_data.data_block.sections:
         # Write section name start delimiter
         mac_text.write("--- " + sec.name + "\n")
 
-        # TODO actually act on the data stored here so we set the origin and scale of the object etc etc...
-        # ONLY if the command section is "autoexec" though!!!
-        # The other sections we don't know what to do with. But they should be kept intact as per the format spec
         start_com = sec.first_command
         end_com = start_com + sec.num_commands
         for com in mac_data.data_block.commands[start_com:end_com]:
             mac_text.write(com.command_str + "\n")
 
+        if sec.name == "autoexec":
+            for com in mac_data.data_block.commands[start_com:end_com]:
+                data = com.command_str.split()
+
+                if len(data) == 2:
+                    com_data = data[1].strip('"')
+                else:
+                    com_data = data[1:]
+
+                is_list = data[0] in allowed_dupes
+
+                if data[0] in autoexec_commands:
+                    if is_list:
+                        autoexec_commands[data[0]].append(com_data)
+                    else:
+                        raise ImportError("Unexpected duplicate command '" + data[0] + "' in mac file: " + mac_data.name)
+                else:
+                    if is_list:
+                        autoexec_commands[data[0]] = [com_data]
+                    else:
+                        autoexec_commands[data[0]] = com_data
+
+    return autoexec_commands
