@@ -33,6 +33,7 @@ from formats.skl import Skl
 from formats.seq import Seq
 from formats.mac import Mac
 
+import math
 from math import pi
 
 # ----------------------------------------------------------------------------
@@ -98,6 +99,22 @@ def load(context, filepath):
             skl_name = mac_commands["SetSkeleton"].strip('"')
             skl_data = skl_data_dict[skl_name]
             ob_armature = hook_up_skl_to_obj(obj, skl_name, skl_data, collection)
+
+        # Set Loc,Rot,Scale must be present
+        loc = mac_commands["SetOrigin"]
+        loc = [float(loc[0]), -float(loc[2]), float(loc[1])]
+        obj.location = loc
+        ob_armature.location = loc
+
+        rot = mac_commands["SetRotation"]
+        rot = [math.radians(float(rot[0])), math.radians(-float(rot[2])), math.radians(float(rot[1]))]
+        obj.rotation_euler = rot
+        ob_armature.rotation_euler = rot
+
+        scale = mac_commands["SetScale"]
+        scale = [float(scale[0]), float(scale[2]), float(scale[1])]
+        obj.scale = scale
+        ob_armature.scale = scale
 
         # Load vertex animation data as shape keys
         if "FRMB" in cpj_data and "AddFrames" in mac_commands and "NULL" in mac_commands["AddFrames"]:
