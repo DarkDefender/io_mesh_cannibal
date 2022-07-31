@@ -96,6 +96,11 @@ def load(context, filepath):
             raise ImportError("Doesn't seem to be a valid cpj model file. There are no GEO chunks!")
         geo_name = mac_commands["SetGeometry"].strip('"')
         geo_data = geo_data_dict[geo_name]
+
+        # TODO This is to ensure that we can correctly import multiple objects using the same geo base mesh.
+        # I guess this could be done in a cleaner way...
+        geo_data_dict[geo_name] = [geo_data[0].copy(), geo_data[1]]
+
         obj = create_mesh_obj(mac_data.name, collection, geo_data)
         obj.location = loc
         obj.rotation_euler = rot
@@ -509,7 +514,7 @@ def load_skl(skl_data):
 
     return (armature_data, created_bones, vertex_data, weight_data)
 
-def hook_up_skl_to_obj(bl_object, name, skl_data, collection):
+def hook_up_skl_to_obj(obj, name, skl_data, collection):
     armature_data = skl_data[0]
     created_bones = skl_data[1]
     vertex_data = skl_data[2]
@@ -524,19 +529,19 @@ def hook_up_skl_to_obj(bl_object, name, skl_data, collection):
 
     # Create Vertex Groups and Weights
     for bone_name in created_bones:
-        bl_object.vertex_groups.new(name=bone_name)
+        obj.vertex_groups.new(name=bone_name)
 
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
     # We will create a base shape key to to store the shape described by the bone vertex offsets.
     # NOTE that this assumes that there are not vertex animations if there is a skeleton.
     # Don't know if this is always true in the cannibal format or not...
-    bl_object.shape_key_add(name='Basis')
-    sk_arm = bl_object.shape_key_add(name='Armature offsets')
+    obj.shape_key_add(name='Basis')
+    sk_arm = obj.shape_key_add(name='Armature offsets')
     sk_arm.value = 1.0
-    bl_object.data.shape_keys.use_relative = True
+    obj.data.shape_keys.use_relative = True
 
-    for vert_index, vertex in enumerate(bl_object.data.vertices):
+    for vert_index, vertex in enumerate(obj.data.vertices):
         num_weights = vertex_data[vert_index].num_weights
         first_weight_idx =  vertex_data[vert_index].first_weight
 
@@ -548,7 +553,7 @@ def hook_up_skl_to_obj(bl_object, name, skl_data, collection):
             group_name = created_bones[weight.bone_index]
             bone = edit_bones[group_name]
 
-            vg = bl_object.vertex_groups.get(group_name)
+            vg = obj.vertex_groups.get(group_name)
             vg.add((vert_index,), weight.weight_factor, 'REPLACE')
 
             off_pos = weight.offset_pos
@@ -571,7 +576,7 @@ def hook_up_skl_to_obj(bl_object, name, skl_data, collection):
     # but that can be later
 
     # Hook up the armature to the mesh object
-    mod = bl_object.modifiers.new("Armature", 'ARMATURE')
+    mod = obj.modifiers.new("Armature", 'ARMATURE')
     mod.object = ob_armature
     ob_armature.show_in_front = True
 
