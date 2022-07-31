@@ -597,6 +597,9 @@ def armature_seq(armature_obj, seq_data):
     bone_scale_data = seq_data.data_block.bone_scale
     bone_trans_data = seq_data.data_block.bone_translate
 
+    scene = bpy.context.scene
+    start_frame = scene.frame_start
+
     for i, frame in enumerate(frames):
         scene.frame_current = start_frame + i
 
