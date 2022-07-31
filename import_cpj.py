@@ -61,16 +61,18 @@ def load(context, filepath):
 
     # Load in all surface data
     srf_data_dict = {}
-    for srf_byte_data in cpj_data["SRFB"]:
-        srf_data = Srf.from_bytes(srf_byte_data)
-        srf_data_dict[srf_data.name] = srf_data
+    if "SRFB" in cpj_data:
+        for srf_byte_data in cpj_data["SRFB"]:
+            srf_data = Srf.from_bytes(srf_byte_data)
+            srf_data_dict[srf_data.name] = srf_data
 
     # Load in all skeleton data
     skl_data_dict = {}
-    for skl_byte_data in cpj_data["SKLB"]:
-        skl_data = Skl.from_bytes(skl_byte_data)
-        arm_data = load_skl(skl_data)
-        skl_data_dict[skl_data.name] = arm_data
+    if "SKLB" in cpj_data:
+        for skl_byte_data in cpj_data["SKLB"]:
+            skl_data = Skl.from_bytes(skl_byte_data)
+            arm_data = load_skl(skl_data)
+            skl_data_dict[skl_data.name] = arm_data
 
     for mac_byte_data in cpj_data["MACB"]:
         mac_data = Mac.from_bytes(mac_byte_data)
@@ -79,12 +81,25 @@ def load(context, filepath):
         collection = bpy.data.collections.new(mac_data.name)
         bpy.context.scene.collection.children.link(collection)
 
+        # Set Loc,Rot,Scale must be present
+        loc = mac_commands["SetOrigin"]
+        loc = [float(loc[0]), -float(loc[2]), float(loc[1])]
+
+        rot = mac_commands["SetRotation"]
+        rot = [math.radians(float(rot[0])), math.radians(-float(rot[2])), math.radians(float(rot[1]))]
+
+        scale = mac_commands["SetScale"]
+        scale = [float(scale[0]), float(scale[2]), float(scale[1])]
+
         # There must be at least one geometry object
         if not "SetGeometry" in mac_commands:
             raise ImportError("Doesn't seem to be a valid cpj model file. There are no GEO chunks!")
         geo_name = mac_commands["SetGeometry"].strip('"')
         geo_data = geo_data_dict[geo_name]
         obj = create_mesh_obj(mac_data.name, collection, geo_data)
+        obj.location = loc
+        obj.rotation_euler = rot
+        obj.scale = scale
 
         if "SetLodData" in mac_commands:
             # TODO LOD
@@ -95,38 +110,28 @@ def load(context, filepath):
             srf_data = srf_data_dict[srf_name]
             load_srf(srf_data, obj.data)
 
+        ob_armature = ""
         if "SetSkeleton" in mac_commands:
             skl_name = mac_commands["SetSkeleton"].strip('"')
             skl_data = skl_data_dict[skl_name]
             ob_armature = hook_up_skl_to_obj(obj, skl_name, skl_data, collection)
-
-        # Set Loc,Rot,Scale must be present
-        loc = mac_commands["SetOrigin"]
-        loc = [float(loc[0]), -float(loc[2]), float(loc[1])]
-        obj.location = loc
-        ob_armature.location = loc
-
-        rot = mac_commands["SetRotation"]
-        rot = [math.radians(float(rot[0])), math.radians(-float(rot[2])), math.radians(float(rot[1]))]
-        obj.rotation_euler = rot
-        ob_armature.rotation_euler = rot
-
-        scale = mac_commands["SetScale"]
-        scale = [float(scale[0]), float(scale[2]), float(scale[1])]
-        obj.scale = scale
-        ob_armature.scale = scale
+            ob_armature.location = loc
+            ob_armature.rotation_euler = rot
+            ob_armature.scale = scale
 
         # Load vertex animation data as shape keys
+        has_vertex_anim = False
         if "FRMB" in cpj_data and "AddFrames" in mac_commands and "NULL" in mac_commands["AddFrames"]:
-            add_basis_shape = True
             for frm_byte_data in cpj_data["FRMB"]:
                 frm_data = Frm.from_bytes(frm_byte_data)
 
-                load_frm(frm_data, obj, add_basis_shape)
-                add_basis_shape = False
+                load_frm(frm_data, obj)
+                has_vertex_anim = True
 
         # Load in all animaiton sequences
         if "SEQB" in cpj_data and "AddSequences" in mac_commands and "NULL" in mac_commands["AddSequences"]:
+            if not has_vertex_anim:
+                obj = ""
             for seq_byte_data in cpj_data["SEQB"]:
                 seq_data = Seq.from_bytes(seq_byte_data)
 
@@ -134,10 +139,10 @@ def load(context, filepath):
 
     return {'FINISHED'}
 
-def load_frm(frm_data, obj, add_basis_shape):
+def load_frm(frm_data, obj):
     verts = obj.data.vertices
 
-    if (add_basis_shape):
+    if obj.data.shape_keys == None or (not "Basis" in obj.data.shape_keys.key_blocks):
         sk_basis = obj.shape_key_add(name='Basis')
         sk_basis.interpolation = 'KEY_LINEAR'
         obj.data.shape_keys.use_relative = False
@@ -572,26 +577,13 @@ def hook_up_skl_to_obj(bl_object, name, skl_data, collection):
 
     return ob_armature
 
-def load_seq(seq_data, obj, armature_obj):
-    scene = bpy.context.scene
-    start_frame = scene.frame_start
-
-    # TODO figure out what to do if different seq bits have different play rates (fps)
-    print(seq_data.play_rate)
-    scene.render.fps = int(seq_data.play_rate)
-
-    # TODO handle vertex animations
-    #obj.animation_data_create()
+def armature_seq(armature_obj, seq_data):
     armature_obj.animation_data_create()
 
     action = bpy.data.actions.new(seq_data.name)
     action.use_fake_user = True
 
-    #obj.animation_data.action = action
     armature_obj.animation_data.action = action
-
-    # TODO
-    #events = seq_data.data_block.events
 
     frames = seq_data.data_block.frames
 
@@ -599,8 +591,6 @@ def load_seq(seq_data, obj, armature_obj):
     bone_rot_data = seq_data.data_block.bone_rotate
     bone_scale_data = seq_data.data_block.bone_scale
     bone_trans_data = seq_data.data_block.bone_translate
-
-    bpy.ops.object.mode_set(mode='POSE', toggle=False)
 
     for i, frame in enumerate(frames):
         scene.frame_current = start_frame + i
@@ -648,7 +638,46 @@ def load_seq(seq_data, obj, armature_obj):
 
             bone.keyframe_insert("location")
 
-    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+def load_seq(seq_data, obj, armature_obj):
+    scene = bpy.context.scene
+    start_frame = scene.frame_start
+
+    # TODO figure out what to do if different seq bits have different play rates (fps)
+    print(seq_data.play_rate)
+    scene.render.fps = int(seq_data.play_rate)
+
+    # TODO events can be used to communiate that something should trigger during animation playback
+    #events = seq_data.data_block.events
+
+    if armature_obj != "":
+        armature_seq(armature_obj, seq_data)
+
+    if obj == "":
+        return
+
+    # Handle vertex animations
+    obj_key_data = obj.data.shape_keys
+    obj_key_data.animation_data_create()
+
+    action = bpy.data.actions.new(seq_data.name)
+    action.use_fake_user = True
+
+    obj_key_data.animation_data.action = action
+
+    frames = seq_data.data_block.frames
+
+    for i, frame in enumerate(frames):
+        scene.frame_current = start_frame + i
+
+        if frame.offset_vert_frame_name == -1:
+            # No vertex frame data here
+            continue
+
+        shape_key = obj_key_data.key_blocks[frame.vert_frame_name]
+
+        obj_key_data.eval_time = shape_key.frame
+        obj_key_data.keyframe_insert("eval_time")
+
 
 def load_mac(mac_data):
     autoexec_commands = {}
