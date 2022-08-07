@@ -37,6 +37,26 @@ import math
 from math import pi
 
 # ----------------------------------------------------------------------------
+def get_loaded_data_name_safe(name, load_data_dict):
+    if name in load_data_dict:
+        # We loaded and names the object exactly as specified in the MAC file
+        return name
+    # Check if there are any partial "name.001" matches in case we have duplicates in the blend existing file.
+    match = ""
+    for key in load_data_dict:
+        if key.startswith(name):
+            match = key
+    if match != "":
+        split_name = match.split('.')
+        if len(split_name) > 1 and split_name[1].isnumeric():
+            return match
+
+    raise ImportError("Couldn't load '" + "' as specified in the MAC data. No such data block was loaded into Blender")
+
+def get_loaded_data_safe(name, load_data_dict):
+    safe_name = get_loaded_data_name_safe(name, load_data_dict)
+    return load_data_dict[safe_name]
+
 def load(context, filepath):
 
     # info
@@ -95,6 +115,7 @@ def load(context, filepath):
         if not "SetGeometry" in mac_commands:
             raise ImportError("Doesn't seem to be a valid cpj model file. There are no GEO chunks!")
         geo_name = mac_commands["SetGeometry"].strip('"')
+        geo_name = get_loaded_data_name_safe(geo_name, geo_data_dict)
         geo_data = geo_data_dict[geo_name]
 
         # TODO This is to ensure that we can correctly import multiple objects using the same geo base mesh.
@@ -112,13 +133,13 @@ def load(context, filepath):
 
         if "SetSurface" in mac_commands:
             srf_name = mac_commands["SetSurface"][1].strip('"')
-            srf_data = srf_data_dict[srf_name]
+            srf_data = get_loaded_data_safe(srf_name, srf_data_dict)
             load_srf(srf_data, obj.data)
 
         ob_armature = ""
         if "SetSkeleton" in mac_commands:
             skl_name = mac_commands["SetSkeleton"].strip('"')
-            skl_data = skl_data_dict[skl_name]
+            skl_data = get_loaded_data_safe(skl_name, skl_data_dict)
             ob_armature = hook_up_skl_to_obj(obj, skl_name, skl_data, collection)
             ob_armature.location = loc
             ob_armature.rotation_euler = rot
