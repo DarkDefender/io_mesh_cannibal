@@ -300,7 +300,7 @@ def create_geo_byte_array(name, verts, edges, tris, mounts, obj_links):
         # base_scale
         for x in range(3):
             base_scale = mount_data[3]
-            byte_arr += struct.pack("f", basc_scale[x])
+            byte_arr += struct.pack("f", base_scale[x])
         # base_rotate
         for x in range(4):
             base_rotate = mount_data[4]
