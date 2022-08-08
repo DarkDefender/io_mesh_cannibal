@@ -125,6 +125,8 @@ def load(context, filepath):
         obj = create_mesh_obj(mac_data.name, collection, geo_data)
         obj.location = loc
         obj.rotation_euler = rot
+        # Rotation order is roll (Z), then pitch (X), and lastly yaw (Y)
+        obj.rotation_mode = "ZXY"
         obj.scale = scale
 
         if "SetLodData" in mac_commands:
@@ -632,13 +634,16 @@ def armature_seq(armature_obj, seq_data):
             bone = armature_obj.pose.bones[bone_name]
 
             # Convert values to radians
-            # 180 degrees
             # 32768 is 180 degrees in the compressed 16bit value from roll,pitch, and yaw.
             x = bone_rot.pitch * pi / 32768
             y = bone_rot.yaw * pi / 32768
             z = bone_rot.roll * pi / 32768
 
-            euler_rot = mathutils.Euler((x,y,z), 'XYZ')
+            # Order of rotation is:
+            # 1. Roll (Z)
+            # 2. Pitch (X)
+            # 3. Yaw (Y)
+            euler_rot = mathutils.Euler((x,y,z), 'ZXY')
             bone.rotation_quaternion = euler_rot.to_quaternion()
 
             bone.keyframe_insert("rotation_quaternion")
