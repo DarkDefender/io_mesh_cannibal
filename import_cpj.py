@@ -304,15 +304,45 @@ def create_mesh_obj(name, collection, geo_data):
         v1 = mesh_data.vertices[parent_tri.vertices[1]]
         v2 = mesh_data.vertices[parent_tri.vertices[2]]
 
+        # NOTE we need to reverse the vertex order here (IE 2,1,0 instead of 0,1,2)
+        # because we changed the winding of the triangle when we imported the mesh (to fix the mesh normals).
         mount_loc = v2.co * mount.tri_barys.x + v1.co * mount.tri_barys.y + v0.co * mount.tri_barys.z
 
-        # Make sure that "matrix_world is up to date.
+        # The mounts local tranform matrix is calculated by:
+        # 1. Using the triangle normal as the "Up" axis
+        # 2. Forward axis that is the direction from mount_loc to the first vertex in the triangle (v2 in this case because we changed the winding)
+        # 3. The last axis is determined by crossing the to axis vectors above
+
+        # Up
+        z_vec = parent_tri.normal
+        # Forward
+        y_vec = -(v2.co - mount_loc)
+        y_vec.normalize()
+        # Side
+        x_vec = y_vec.cross(z_vec)
+        x_vec.normalize()
+
+        mount_local_matrix = mathutils.Matrix([x_vec, y_vec, z_vec]).transposed()
+
+        # Make sure that "matrix_world" is up to date.
+        # We need to make sure that the mount point has been moved into the origin of Blenders triangle matrix transform space.
+        # Otherwise we can't figure out how to manipulate the matrix_parent_inverse matrix to get to correct transform.
         bpy.context.view_layer.update()
-        mount_obj.matrix_world
 
-        local_coords = mount_obj.matrix_world.inverted() @ mount_loc
+        mat_world_inv = mount_obj.matrix_world.inverted()
+        local_coords = mat_world_inv @ mount_loc
 
-        # Offset from parent face center
+        matrix_diff = mat_world_inv.to_3x3() @ mount_local_matrix
+
+        mount_obj.matrix_parent_inverse = matrix_diff.to_4x4()
+
+        quat = mathutils.Quaternion((mount.base_rotate.s, mount.base_rotate.v.x, -mount.base_rotate.v.z, mount.base_rotate.v.y))
+        rot_mat = quat.to_matrix().to_4x4()
+
+        mount_obj.matrix_parent_inverse = mount_obj.matrix_parent_inverse @ rot_mat
+
+        # Specify the offset from parent face center
+        # NOTE we don't set the third axis (Z) here because we should always line in the triangle plane, so it should always be zero.
         mount_obj.matrix_parent_inverse[0][3] = local_coords[0]
         mount_obj.matrix_parent_inverse[1][3] = local_coords[1]
 
@@ -320,16 +350,16 @@ def create_mesh_obj(name, collection, geo_data):
         mount_obj.location.y = -mount.base_translate.z
         mount_obj.location.z = mount.base_translate.y
 
-        # TODO double check that the coordinate system conversion here is correct
-        mount_obj.rotation_mode = 'QUATERNION'
-        mount_obj.rotation_quaternion[0] = mount.base_rotate.s
-        mount_obj.rotation_quaternion[1] = mount.base_rotate.v.x
-        mount_obj.rotation_quaternion[2] = -mount.base_rotate.v.z
-        mount_obj.rotation_quaternion[3] = mount.base_rotate.v.y
+        ## TODO double check that the coordinate system conversion here is correct
+        #mount_obj.rotation_mode = 'QUATERNION'
+        #mount_obj.rotation_quaternion[0] = mount.base_rotate.s
+        #mount_obj.rotation_quaternion[1] = mount.base_rotate.v.x
+        #mount_obj.rotation_quaternion[2] = mount.base_rotate.v.y
+        #mount_obj.rotation_quaternion[3] = mount.base_rotate.v.z
 
-        mount_obj.scale[0] = mount.base_scale.x
-        mount_obj.scale[1] = -mount.base_scale.z
-        mount_obj.scale[2] = mount.base_scale.y
+        #mount_obj.scale[0] = mount.base_scale.x
+        #mount_obj.scale[1] = -mount.base_scale.z
+        #mount_obj.scale[2] = mount.base_scale.y
 
     return obj
 
