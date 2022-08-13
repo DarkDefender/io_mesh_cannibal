@@ -432,7 +432,7 @@ def load_srf(srf_data, mesh_data):
         glaze_index_layer.data[i].value = tri.glaze_tex_index
         glaze_func_layer.data[i].value = tri.glaze_func
 
-def process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child):
+def process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processed_parents):
     bone_data = bone_datas[bone_index]
 
     parent_index = bone_data.parent_index
@@ -444,10 +444,8 @@ def process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processe
 
         if has_processed_parents[parent_index] == False:
             # Ensure that root parent bone is in the correct position.
-            process_bone(parent_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child)
+            process_bone(parent_index, created_bones, edit_bones, bone_datas, has_processed_parents)
 
-        has_no_child[parent_index] = False
-        #bone.use_connect = True
         # Set position to partent bone.
         # The relative transform will be handled in pose mode in a later step.
         bone.head = parent_bone.head
@@ -501,10 +499,9 @@ def load_skl(skl_data):
 
     # Pass 2: Set bone parents
     has_processed_parents = [False] * len(bone_datas)
-    has_no_child = [True] * len(bone_datas)
 
     for bone_index in range(len(bone_datas)):
-        process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processed_parents, has_no_child)
+        process_bone(bone_index, created_bones, edit_bones, bone_datas, has_processed_parents)
 
     bpy.ops.object.mode_set(mode='POSE', toggle=False)
     # Pass 3: Transform bones
@@ -547,16 +544,25 @@ def load_skl(skl_data):
     #            bone.use_connect = True
 
     ## Align tails of bones at the end of a bone chain
-    #for index, no_child in enumerate(has_no_child):
-    #    if not no_child:
+    #for bone in edit_bones:
+    #    if not bone.use_connect:
     #        continue
-    #    bone = edit_bones[created_bones[index]]
 
-    #    if bone.use_connect:
-    #        old_length = bone.length
-    #        vec = bone.head - bone.parent.head
-    #        bone.tail = bone.head + vec
-    #        bone.length = old_length
+    #    children_connected = False
+    #    for child_bone in bone.children:
+    #        if child_bone.use_connect:
+    #            children_connected = True
+    #            break
+
+    #    if children_connected:
+    #        continue
+
+    #    old_length = bone.length
+    #    vec = bone.head - bone.parent.head
+    #    bone.tail = bone.head + vec
+    #    bone.length = old_length
+
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
     # Remove armature object, we will create it later with the MAC data
     bpy.data.objects.remove(ob_armature)
