@@ -342,20 +342,13 @@ def create_mesh_obj(name, collection, geo_data):
         mount_obj.matrix_parent_inverse = mount_obj.matrix_parent_inverse @ rot_mat
 
         # Specify the offset from parent face center
-        # NOTE we don't set the third axis (Z) here because we should always line in the triangle plane, so it should always be zero.
+        # NOTE we don't set the third axis (Z) here because we should always lie in the triangle plane, so it should always be zero.
         mount_obj.matrix_parent_inverse[0][3] = local_coords[0]
         mount_obj.matrix_parent_inverse[1][3] = local_coords[1]
 
         mount_obj.location.x = mount.base_translate.x
         mount_obj.location.y = -mount.base_translate.z
         mount_obj.location.z = mount.base_translate.y
-
-        ## TODO double check that the coordinate system conversion here is correct
-        #mount_obj.rotation_mode = 'QUATERNION'
-        #mount_obj.rotation_quaternion[0] = mount.base_rotate.s
-        #mount_obj.rotation_quaternion[1] = mount.base_rotate.v.x
-        #mount_obj.rotation_quaternion[2] = mount.base_rotate.v.y
-        #mount_obj.rotation_quaternion[3] = mount.base_rotate.v.z
 
         #mount_obj.scale[0] = mount.base_scale.x
         #mount_obj.scale[1] = -mount.base_scale.z
