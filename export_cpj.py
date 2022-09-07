@@ -184,6 +184,7 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                         has_seq = True
                     case "SetLodData":
                         print("Skipping LOD entry in MAC file!")
+                        list_index +=1
                         continue
 
             command_strings.append(command)
