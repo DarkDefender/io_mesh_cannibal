@@ -24,6 +24,7 @@ import bpy
 
 from mathutils import Vector
 from mathutils import Matrix
+import mathutils
 import bmesh
 
 from cpj_utils import *
@@ -64,7 +65,7 @@ def save(context, filepath):
         bmesh.ops.triangulate(bm, faces=bm.faces)
         loops = sum(bm.calc_loop_triangles(),())
 
-        data_chunks.append(create_geo_data(me.name, bm, loops, True))
+        data_chunks.append(create_geo_data(obj, me.name, bm, loops, True))
 
         if len(obj_data[1]) > 1:
             raise Exception("Can't handle more that one SRF layer on a mesh currently")
@@ -221,7 +222,113 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
 
     return (mac_byte_data, mesh_object_name, uv_names, armature_name)
 
-def create_geo_data(geo_name, bm, loops, apply_modifiers):
+def get_geo_mount_data(obj, bm):
+    mounts = []
+    mounts_data = []
+    for child in obj.children:
+        if child.type == 'EMPTY' and child.parent_type == 'VERTEX_3':
+            mounts.append(child)
+
+    obj_mat_inv = obj.matrix_world.inverted()
+
+    for mount in mounts:
+        # Get triangle to the mount point
+        v0 = bm.verts[mount.parent_vertices[0]]
+        v1 = bm.verts[mount.parent_vertices[1]]
+        v2 = bm.verts[mount.parent_vertices[2]]
+
+        face_set = set( v0.link_faces ) & set( v1.link_faces ) & set( v2.link_faces )
+
+        if len(face_set) != 1:
+            raise Exception("Invalid geo mount in object '" + obj.name + "', not parented to a single triangle.")
+        face = face_set.pop()
+
+        # Convert mount location and axis into mesh local coordinates
+        mount_mat = obj_mat_inv @ mount.matrix_world
+        mount_loc = mount_mat.translation
+
+        point_offset = Vector((0,0,0))
+
+        if bmesh.geometry.intersect_face_point(face, mount_loc):
+            # The projected point will lie inside the triangle
+            vec = mount_loc - v2.co
+            vec_normal = vec.project(face.normal)
+
+            point_in_plane = vec - vec_normal + v2.co
+
+            bary_weights = mathutils.interpolate.poly_3d_calc([v2.co,v1.co,v0.co], point_in_plane)
+
+            if vec_normal.length > 0.001:
+                point_offset = mount_loc - point_in_plane
+        else:
+            # The point will have to be projected to the closest edge
+            min_dist = float("inf")
+
+            edge_corners = [v2.co,v1.co,v0.co]
+            for i, co in enumerate(edge_corners):
+                e_vec = edge_corners[(i+1) % 3] - edge_corners[i]
+
+                mount_vec = mount_loc - edge_corners[i]
+                proj_e = mount_vec.project(e_vec)
+                dist = (mount_vec - proj_e).length
+                if dist < min_dist:
+                    min_dist = dist
+                    bary_weights = [0,0,0]
+
+                    loc_on_edge = mount_vec.dot(e_vec) / e_vec.dot(e_vec)
+                    if loc_on_edge <= 0:
+                        bary_weights[i] = 1
+                        point_in_plane = edge_corners[i]
+                    elif loc_on_edge >= 1:
+                        bary_weights[(i+1) % 3] = 1
+                        point_in_plane = edge_corners[(i+1) % 3]
+                    else:
+                        bary_weights[i] = 1 - loc_on_edge
+                        bary_weights[(i+1) % 3] = loc_on_edge
+                        point_in_plane = proj_e + edge_corners[i]
+
+                    point_offset = mount_loc - point_in_plane
+        # Calculate the "native" transform axis the cpj mount will use
+        # Up
+        z_vec = face.normal
+        # Forward
+        y_vec = -(v2.co - point_in_plane)
+        y_vec.normalize()
+        # Side
+        x_vec = y_vec.cross(z_vec)
+        x_vec.normalize()
+
+        mount_local_matrix = Matrix([x_vec, y_vec, z_vec]).transposed()
+
+        # Calculate the amount of rotation needed to get from the "native" cpj transform to have the axis line up with the mount point axis.
+        mount_rot = mount_mat.to_quaternion()
+        cpj_rot = mount_local_matrix.to_quaternion()
+        rot_diff = cpj_rot.rotation_difference(mount_rot)
+        # Convert into cpj transform space
+        rot_diff = [rot_diff.w, rot_diff.x, rot_diff.z, -rot_diff.y]
+
+        mount_mat_3x3 = mount_mat.to_3x3()
+
+        if point_offset.length < 0.001:
+            mount_local_translation = [0,0,0]
+        else:
+            # Convert to cpj "Y up" coordinates.
+            mount_local_translation = [point_offset.dot(mount_mat_3x3.col[0]),
+                                       point_offset.dot(mount_mat_3x3.col[2]),
+                                       -point_offset.dot(mount_mat_3x3.col[1])]
+
+        mount_data = []
+        mount_data.append(mount.name)
+        mount_data.append(face.index)
+        mount_data.append(bary_weights)
+        mount_data.append((1, 1, 1))
+        mount_data.append(quat_to_cpj_quat(rot_diff))
+        mount_data.append(mount_local_translation)
+
+        mounts_data.append(mount_data)
+    return mounts_data
+
+def create_geo_data(obj, geo_name, bm, loops, apply_modifiers):
     # Ensure all indices are valid and up to date
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
@@ -285,21 +392,7 @@ def create_geo_data(geo_name, bm, loops, apply_modifiers):
 
         tris.append(tri)
 
-    # TODO
-    #for mount_data in geo_data.data_block.mounts:
-    #    mount = []
-    #    mount.append(mount_data.name)
-    #    mount.append(mount_data.tri_index)
-    #    tri_barys = mount_data.tri_barys
-    #    mount.append((tri_barys.x, tri_barys.y, tri_barys.z))
-    #    base_scale = mount_data.base_scale
-    #    mount.append((base_scale.x, base_scale.y, base_scale.z))
-    #    base_rotate = mount_data.base_rotate
-    #    mount.append((base_rotate.v.x, base_rotate.v.y, base_rotate.v.z, base_rotate.s))
-    #    base_translate = mount_data.base_translate
-    #    mount.append((base_translate.x, base_translate.y, base_translate.z))
-
-    #    mounts.append(mount)
+    mounts = get_geo_mount_data(obj, bm)
 
     geo_byte_data = create_geo_byte_array(geo_name, verts, edges, tris, mounts, obj_links)
 
