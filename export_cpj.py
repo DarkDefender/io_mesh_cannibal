@@ -29,6 +29,9 @@ import bmesh
 
 from cpj_utils import *
 
+import math
+import shlex
+
 # ----------------------------------------------------------------------------
 def quat_to_cpj_quat(quat):
     # cpj_quat = x,y,z,w
@@ -87,6 +90,28 @@ def save(context, filepath):
 
     return {'FINISHED'}
 
+def mac_add_geo_data_commands(command_strings, mesh_obj):
+    location = -mesh_obj.location
+    cpj_loc = [location.x, location.z, -location.y]
+    origin_str = "SetOrigin {0:.6f} {1:.6f} {2:.6f}".format(*cpj_loc)
+    command_strings.append(origin_str)
+
+    scale = mesh_obj.scale
+    cpj_scale = [scale.x, scale.z, scale.y]
+    scale_str = "SetScale {0:.6f} {1:.6f} {2:.6f}".format(*cpj_scale)
+    command_strings.append(scale_str)
+
+    rot = mesh_obj.rotation_euler
+    cpj_rot = [math.degrees(rot.x), math.degrees(rot.z), math.degrees(-rot.y)]
+    rot_str = "SetRotation {0:.6f} {1:.6f} {2:.6f}".format(*cpj_rot)
+    command_strings.append(rot_str)
+
+    bb_max, bb_min = calc_boundbox_max_min(mesh_obj)
+    bb_min_str = "SetBoundsMin {0:.6f} {1:.6f} {2:.6f}".format(*bb_min)
+    bb_max_str = "SetBoundsMax {0:.6f} {1:.6f} {2:.6f}".format(*bb_max)
+    command_strings.append(bb_min_str)
+    command_strings.append(bb_max_str)
+
 def parse_mac_text(mac_name, mac_text, text_block_name):
     # Split up the commands into a list
     command_list = mac_text.splitlines()
@@ -113,9 +138,10 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
     has_author = False
     has_descripton = False
 
-    valid_autoexec_commands = ["SetAuthor", "SetDescription", "SetGeometry", "SetLodData", "SetSkeleton", "SetSurface", "AddFrames", "AddSequences"]
+    valid_autoexec_commands = ["SetAuthor", "SetDescription", "SetOrigin", "SetScale", "SetRotation", "SetBoundsMin", "SetBoundsMax", "SetGeometry", "SetLodData", "SetSkeleton", "SetSurface", "AddFrames", "AddSequences"]
     # TODO remake this list to be exclusive, IE which types NOT to check when automatic origin and scale etc writing is implemented
     quote_check = ["SetAuthor", "SetDescription", "SetGeometry", "SetLodData", "SetSkeleton", "AddFrames", "AddSequences"]
+    auto_set_commands = ["SetOrigin", "SetScale", "SetRotation", "SetBoundsMin", "SetBoundsMax"]
 
     # Go through all command sections
     while list_index < list_size:
@@ -137,11 +163,10 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                 break
 
             if section_name[1] == "autoexec":
-                com = command.split()
+                com = shlex.split(command, posix=False)
 
-                # TODO uncomment this once we have automatic Origin, scale etc implemented
-                #if not com[0] in valid_autoexec_commands:
-                #    raise Exception(command + " is not a valid autoexec command!")
+                if not com[0] in valid_autoexec_commands:
+                    raise Exception(command + " is not a valid autoexec command!")
 
                 if len(com) < 2:
                     raise Exception("Too few arguments for command in MAC text command file: " + text_block_name + "\n Command was: " + command)
@@ -149,6 +174,11 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                 if com[0] in quote_check:
                     if not (com[1].startswith('"') and com[1].endswith('"')):
                         raise Exception("Error in: " + text_block_name + "\n" + com[0] + " requires the string argument to be in quotation marks")
+
+                if com[0] in auto_set_commands:
+                    # Skip these as we will set these ourselves with the data from the "SetGeometry" object
+                    list_index +=1
+                    continue
 
                 match com[0]:
                     case "SetGeometry":
@@ -158,6 +188,9 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                         if bpy.data.objects[mesh_object_name].type != 'MESH':
                             raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object_name + " is not a mesh" )
                         # TODO write in all the special sections like Orgin, Scale, boundingboxes etc.
+                        mac_add_geo_data_commands(command_strings, bpy.data.objects[mesh_object_name])
+                        num_commands += 5
+                        command_index += 5
                     case "SetSurface":
                         if len(com) < 3:
                             raise Exception("Error in: " + text_block_name + "\n 'SetSurface' requires two arguments. Index and uv name")
@@ -184,7 +217,7 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                     case "AddSequences":
                         has_seq = True
                     case "SetLodData":
-                        print("Skipping LOD entry in MAC file!")
+                        #print("Skipping LOD entry in MAC file!")
                         list_index +=1
                         continue
 
@@ -524,8 +557,7 @@ def create_skl_data(obj, me, arm_obj):
     return skl_byte_data
 
 def calc_boundbox_max_min(obj):
-    # Ensure that the bounding box corners are in world space coordinates
-    bbox_corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+    bbox_corners = [Vector(corner) for corner in obj.bound_box]
 
     max_x = -float("inf")
     min_x = float("inf")

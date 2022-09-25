@@ -103,7 +103,7 @@ def load(context, filepath):
 
         # Set Loc,Rot,Scale must be present
         loc = mac_commands["SetOrigin"]
-        loc = [float(loc[0]), -float(loc[2]), float(loc[1])]
+        loc = -mathutils.Vector( (float(loc[0]), -float(loc[2]), float(loc[1])) )
 
         rot = mac_commands["SetRotation"]
         rot = [math.radians(float(rot[0])), math.radians(-float(rot[2])), math.radians(float(rot[1]))]
