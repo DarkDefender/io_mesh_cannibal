@@ -571,13 +571,13 @@ def create_seq_byte_array(name, play_rate, frames, events, bone_info, bone_trans
 
     # Write all param_str strings (if any)
     for event_data in events:
-        if event_data[3] == None:
+        if event_data[2] == None:
             # No name, set the offset to -1
             event_str_offsets.append(-1)
             continue
         # Write name string
         event_str_offsets.append(data_block_offset)
-        byte_str = string_to_byte_string(event_data[3])
+        byte_str = string_to_byte_string(event_data[2])
         byte_arr += byte_str
 
         data_block_offset += len(byte_str)
