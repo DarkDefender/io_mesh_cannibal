@@ -57,12 +57,30 @@ def get_loaded_data_safe(name, load_data_dict):
     safe_name = get_loaded_data_name_safe(name, load_data_dict)
     return load_data_dict[safe_name]
 
-def load(context, filepath):
+def load(filepath, import_settings):
 
     # info
     print("Reading %s..." % filepath)
 
     cpj_data = load_cpj_data(filepath)
+
+    if import_settings['only_import_animations']:
+        # Load in all animaiton sequences
+        if "SEQB" in cpj_data:
+            obj = ""
+            ob_armature = bpy.context.active_object
+
+            if ob_armature.type != 'ARMATURE':
+                raise ImportError("The active object needs to be an armature you want to import the animations to!")
+
+            for seq_byte_data in cpj_data["SEQB"]:
+                seq_data = Seq.from_bytes(seq_byte_data)
+
+                load_seq(seq_data, obj, ob_armature, True)
+        else:
+            raise ImportError("This file doesn't containt any animation data. There are no SEQ chunks!")
+
+        return {'FINISHED'}
 
     # Load Model Actor Configuation data
     # Unlike other chunks, there has to be at least 1 MAC chunk
@@ -163,7 +181,7 @@ def load(context, filepath):
             for seq_byte_data in cpj_data["SEQB"]:
                 seq_data = Seq.from_bytes(seq_byte_data)
 
-                load_seq(seq_data, obj, ob_armature)
+                load_seq(seq_data, obj, ob_armature, False)
 
     return {'FINISHED'}
 
@@ -634,7 +652,7 @@ def hook_up_skl_to_obj(obj, name, skl_data, collection):
 
     return ob_armature
 
-def armature_seq(armature_obj, seq_data):
+def armature_seq(armature_obj, seq_data, ignore_non_existing_bones):
     armature_obj.animation_data_create()
 
     action = bpy.data.actions.new(seq_data.name)
@@ -660,6 +678,9 @@ def armature_seq(armature_obj, seq_data):
 
             bone_name = bone_info[bone_rot.bone_index].name
 
+            if ignore_non_existing_bones and bone_name not in armature_obj.pose.bones:
+                continue
+
             bone = armature_obj.pose.bones[bone_name]
 
             # Convert values to radians
@@ -682,6 +703,9 @@ def armature_seq(armature_obj, seq_data):
 
             bone_name = bone_info[bone_scale.bone_index].name
 
+            if ignore_non_existing_bones and bone_name not in armature_obj.pose.bones:
+                continue
+
             bone = armature_obj.pose.bones[bone_name]
 
             scale = bone_scale.scale
@@ -694,6 +718,9 @@ def armature_seq(armature_obj, seq_data):
 
             bone_name = bone_info[bone_trans.bone_index].name
 
+            if ignore_non_existing_bones and bone_name not in armature_obj.pose.bones:
+                continue
+
             bone = armature_obj.pose.bones[bone_name]
 
             trans = bone_trans.translate
@@ -701,7 +728,7 @@ def armature_seq(armature_obj, seq_data):
 
             bone.keyframe_insert("location")
 
-def load_seq(seq_data, obj, armature_obj):
+def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
     scene = bpy.context.scene
     start_frame = scene.frame_start
 
@@ -713,7 +740,7 @@ def load_seq(seq_data, obj, armature_obj):
     #events = seq_data.data_block.events
 
     if armature_obj != "":
-        armature_seq(armature_obj, seq_data)
+        armature_seq(armature_obj, seq_data, ignore_non_existing_bones)
 
     if obj == "":
         return

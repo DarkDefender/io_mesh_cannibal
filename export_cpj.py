@@ -55,6 +55,16 @@ def save(context, filepath):
 
     for obj_data in objs_to_process:
         obj = bpy.data.objects[obj_data[0]]
+
+        if obj_data[2] != "":
+            armature = bpy.data.objects[obj_data[2]]
+            # Ensure that the armature is in its rest postion.
+            # Otherwise the exported base geometry will be deformed by it
+            old_pose_setting = armature.data.pose_position
+            armature.data.pose_position = 'REST'
+        else:
+            armature = None
+
         if apply_modifiers:
             depsgraph = context.evaluated_depsgraph_get()
             me = obj.evaluated_get(depsgraph).to_mesh()
@@ -77,9 +87,9 @@ def save(context, filepath):
             data_chunks.append(create_srf_data(obj, uv_name, bm, loops))
         bm.free()
 
-        if obj_data[2] != "":
-            armature = bpy.data.objects[obj_data[2]]
+        if armature != None:
             data_chunks.append(create_skl_data(obj, me, armature))
+            armature.data.pose_position = old_pose_setting
 
         if apply_modifiers:
             obj.evaluated_get(depsgraph).to_mesh_clear()
@@ -187,7 +197,6 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                             raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object_name + " does not exist")
                         if bpy.data.objects[mesh_object_name].type != 'MESH':
                             raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object_name + " is not a mesh" )
-                        # TODO write in all the special sections like Orgin, Scale, boundingboxes etc.
                         mac_add_geo_data_commands(command_strings, bpy.data.objects[mesh_object_name])
                         num_commands += 5
                         command_index += 5
@@ -487,10 +496,6 @@ def create_skl_data(obj, me, arm_obj):
 
     bones = []
 
-    # Ensure that the armature is in its rest postion
-    old_pose_setting = arm_obj.data.pose_position
-    arm_obj.data.pose_position = 'REST'
-
     for bone_data in bone_list:
         bone = []
 
@@ -552,11 +557,25 @@ def create_skl_data(obj, me, arm_obj):
 
     skl_byte_data = create_skl_byte_array(arm_obj.name, bones, verts, weights, mounts)
 
-    arm_obj.data.pose_position = old_pose_setting
-
     return skl_byte_data
 
 def calc_boundbox_max_min(obj):
+    # TODO we might not want to disable all modifiers to get the correct bounding box.
+    # But this is probably the correct thing to do in most situations.
+    old_modifier_settings = []
+    for mod in getattr(obj, "modifiers", []):
+        old_modifier_settings.append(mod.show_viewport)
+        mod.show_viewport = False
+
+    if len(old_modifier_settings) != 0:
+        # We need to ensure that our modifier changes are respected by getting an evaludated copy
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        orig_obj = obj
+        obj = obj.evaluated_get(depsgraph)
+        for i, mod in enumerate(getattr(orig_obj, "modifiers", [])):
+            mod.show_viewport = old_modifier_settings[i]
+
+
     bbox_corners = [Vector(corner) for corner in obj.bound_box]
 
     max_x = -float("inf")

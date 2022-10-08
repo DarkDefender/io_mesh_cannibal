@@ -42,9 +42,6 @@ from bpy.props import (
 from bpy_extras.io_utils import (
     ImportHelper,
     ExportHelper,
-    orientation_helper,
-    path_reference_mode,
-    axis_conversion,
 )
 
 
@@ -64,7 +61,6 @@ bl_info = {
 
 
 # ----------------------------------------------------------------------------
-@orientation_helper(axis_forward='-Z', axis_up='Y')
 class ImportCPJ(bpy.types.Operator, ImportHelper):
     """Load a Cannibal Project (CPJ) File"""
     bl_idname = "import_model.cpj"
@@ -74,18 +70,25 @@ class ImportCPJ(bpy.types.Operator, ImportHelper):
     filename_ext = ".cpj"
     filter_glob: StringProperty(default="*.cpj", options={'HIDDEN'})
 
+
+    only_import_animations: BoolProperty(
+        name='Only Import Animations',
+        description='Import all skeleton animation files onto the active armature',
+        default=False
+    )
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.prop(self, 'only_import_animations')
+
     def execute(self, context):
         from . import import_cpj
-        keywords = self.as_keywords(ignore=(
-            "axis_forward",
-            "axis_up",
-            "filter_glob",
-        ))
-        return import_cpj.load(context, **keywords)
+        import_settings = self.as_keywords()
+        return import_cpj.load(self.filepath, import_settings)
 
 
 # ----------------------------------------------------------------------------
-@orientation_helper(axis_forward='-Z', axis_up='Y')
 class ExportCPJ(bpy.types.Operator, ExportHelper):
     """Save a Cannibal Project (CPJ) File"""
     bl_idname = "export_model.cpj"
