@@ -32,6 +32,8 @@ sys.path.append(os.path.dirname(__file__))
 from import_cpj import create_custom_data_layers
 from export_cpj import calc_boundbox_max_min
 
+from fractions import Fraction
+
 from bpy.props import (
     BoolProperty,
     IntProperty,
@@ -147,6 +149,32 @@ class CPJ_InitOperator(Operator):
         text_block.write('SetSurface 0 "' + obj.data.uv_layers[0].name + '"\n')
         text_block.write('AddFrames "NULL"\n')
         text_block.write('AddSequences "NULL"\n')
+
+        return {'FINISHED'}
+
+class CPJ_ActionPlaybackOperator(Operator):
+    """Setup animation playback for the active animation action"""
+    bl_idname = "object.cpj_action_playback_range"
+    bl_label = "CPJ use animation action playback settings"
+
+    def execute(self, context):
+        obj = context.object
+
+        # TODO make a seperate operator for shape key actions
+        if obj.animation_data != None:
+            action = obj.animation_data.action
+        elif obj.data.shape_keys.animation_data != None:
+            action = obj.data.shape_keys.animation_data.action
+        else:
+            raise Exception("No animation/action data present on the active object!")
+
+        frac = Fraction(action["Framerate"])
+        context.scene.render.fps = frac.numerator
+        context.scene.render.fps_base = frac.denominator
+
+        context.scene.use_preview_range = True
+        context.scene.frame_preview_start = int(action.frame_start)
+        context.scene.frame_preview_end = int(action.frame_end)
 
         return {'FINISHED'}
 
@@ -362,6 +390,8 @@ class OBJ_PT_panel(bpy.types.Panel):
 
         layout.separator()
 
+        col.operator(CPJ_ActionPlaybackOperator.bl_idname, text="Setup playback for current action", icon="ARMATURE_DATA")
+
 class EDIT_PT_Fpanel(bpy.types.Panel):
     bl_label = "Face attributes"
     bl_category = "CPJ Utils"
@@ -430,6 +460,7 @@ classes = {
     EDIT_PT_Fpanel,
     EDIT_PT_Vpanel,
     CPJ_InitOperator,
+    CPJ_ActionPlaybackOperator,
     CPJ_FaceFlagAssign,
     CPJ_FaceFlagRemove,
     CPJ_FaceFlagSelect,

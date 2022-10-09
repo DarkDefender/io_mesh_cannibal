@@ -658,6 +658,8 @@ def armature_seq(armature_obj, seq_data, ignore_non_existing_bones):
     action = bpy.data.actions.new(seq_data.name)
     action.use_fake_user = True
 
+    action["Framerate"] = seq_data.play_rate
+
     armature_obj.animation_data.action = action
 
     frames = seq_data.data_block.frames
@@ -728,19 +730,26 @@ def armature_seq(armature_obj, seq_data, ignore_non_existing_bones):
 
             bone.keyframe_insert("location")
 
+    action.use_frame_range = True
+    # There is no way to know if the animation is intended to be cyclic, but just assume this is the case.
+    action.use_cyclic = True
+    action.frame_start = start_frame
+    # +1 because we want to not loop on the exact last frame.
+    action.frame_end = start_frame + i + 1
+
+    return action
+
 def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
     scene = bpy.context.scene
     start_frame = scene.frame_start
 
-    # TODO figure out what to do if different seq bits have different play rates (fps)
-    print(seq_data.play_rate)
-    scene.render.fps = int(seq_data.play_rate)
-
     # TODO events can be used to communiate that something should trigger during animation playback
     #events = seq_data.data_block.events
 
+    action = None
+
     if armature_obj != "":
-        armature_seq(armature_obj, seq_data, ignore_non_existing_bones)
+        action = armature_seq(armature_obj, seq_data, ignore_non_existing_bones)
 
     if obj == "":
         return
@@ -749,8 +758,11 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
     obj_key_data = obj.data.shape_keys
     obj_key_data.animation_data_create()
 
-    action = bpy.data.actions.new(seq_data.name)
-    action.use_fake_user = True
+    if action == None:
+        action = bpy.data.actions.new(seq_data.name)
+        action.use_fake_user = True
+
+        action["Framerate"] = seq_data.play_rate
 
     obj_key_data.animation_data.action = action
 
@@ -767,6 +779,13 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
 
         obj_key_data.eval_time = shape_key.frame
         obj_key_data.keyframe_insert("eval_time")
+
+    action.use_frame_range = True
+    # There is no way to know if the animation is intended to be cyclic, but just assume this is the case.
+    action.use_cyclic = True
+    action.frame_start = start_frame
+    # +1 because we want to not loop on the exact last frame.
+    action.frame_end = start_frame + i + 1
 
 
 def load_mac(mac_data):
