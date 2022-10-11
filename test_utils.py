@@ -211,7 +211,6 @@ def round_trip_seq_data(seq_data):
 
         bone_rotate.append(bone_r)
 
-
     for bone_s_data in seq_data.data_block.bone_scale:
         bone_s = []
         bone_s.append(bone_s_data.bone_index)

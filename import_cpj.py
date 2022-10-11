@@ -216,7 +216,7 @@ def load_frm(frm_data, obj):
 
                 pos = byte_pos
             else:
-                pos = vert.pos
+                pos = (vert.x, vert.y, vert.z)
 
             # position each vert
             sk.data[i].co.x = pos[0]
@@ -745,6 +745,8 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
 
     # TODO events can be used to communiate that something should trigger during animation playback
     #events = seq_data.data_block.events
+
+    # TODO only create animation data for skeleton/shape keys if the animations has any keys for them
 
     action = None
 

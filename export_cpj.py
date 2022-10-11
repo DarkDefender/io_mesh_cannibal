@@ -38,7 +38,7 @@ def quat_to_cpj_quat(quat):
     cpj_quat = [quat[1], quat[2], quat[3], quat[0]]
     return cpj_quat
 
-def save(context, filepath):
+def save(context, filepath, export_settings):
 
     apply_modifiers = True
 
@@ -55,6 +55,19 @@ def save(context, filepath):
 
     for obj_data in objs_to_process:
         obj = bpy.data.objects[obj_data[0]]
+
+        if obj.data.shape_keys != None:
+            # Ensure that the base mesh is exported without any unwanted shapekey deformations
+            old_sk_show = obj.show_only_shape_key
+            old_sk_idx = obj.active_shape_key_index
+            obj.show_only_shape_key = True
+
+            blocks = obj.data.shape_keys.key_blocks
+            if "Armature offsets" in blocks:
+                obj.active_shape_key_index = blocks["Armature offsets"].index
+            else:
+                # The basis shape key is on index 0
+                obj.active_shape_key_index = 0
 
         if obj_data[2] != "":
             armature = bpy.data.objects[obj_data[2]]
@@ -78,7 +91,11 @@ def save(context, filepath):
         bmesh.ops.triangulate(bm, faces=bm.faces)
         loops = sum(bm.calc_loop_triangles(),())
 
-        data_chunks.append(create_geo_data(obj, me.name, bm, loops, True))
+        data_chunks.append(create_geo_data(obj, me.name, bm, loops))
+
+        frm_byte_data = create_frm_data(obj)
+        if frm_byte_data != None:
+            data_chunks.append(frm_byte_data)
 
         if len(obj_data[1]) > 1:
             raise Exception("Can't handle more that one SRF layer on a mesh currently")
@@ -87,9 +104,16 @@ def save(context, filepath):
             data_chunks.append(create_srf_data(obj, uv_name, bm, loops))
         bm.free()
 
+        if obj.data.shape_keys != None:
+            obj.show_only_shape_key = old_sk_show
+            obj.active_shape_key_index = old_sk_idx
+
         if armature != None:
             data_chunks.append(create_skl_data(obj, me, armature))
             armature.data.pose_position = old_pose_setting
+
+        if not export_settings['skip_animation_export']:
+            data_chunks += create_seq_data(obj)
 
         if apply_modifiers:
             obj.evaluated_get(depsgraph).to_mesh_clear()
@@ -370,7 +394,7 @@ def get_geo_mount_data(obj, bm):
         mounts_data.append(mount_data)
     return mounts_data
 
-def create_geo_data(obj, geo_name, bm, loops, apply_modifiers):
+def create_geo_data(obj, geo_name, bm, loops):
     # Ensure all indices are valid and up to date
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
@@ -560,6 +584,18 @@ def create_skl_data(obj, me, arm_obj):
     return skl_byte_data
 
 def calc_boundbox_max_min(obj):
+    if obj.data.shape_keys != None:
+        old_sk_show = obj.show_only_shape_key
+        old_sk_idx = obj.active_shape_key_index
+        obj.show_only_shape_key = True
+
+        blocks = obj.data.shape_keys.key_blocks
+        if "Armature offsets" in blocks:
+            obj.active_shape_key_index = blocks["Armature offsets"].index
+        else:
+            # The basis shape key is on index 0
+            obj.active_shape_key_index = 0
+
     # TODO we might not want to disable all modifiers to get the correct bounding box.
     # But this is probably the correct thing to do in most situations.
     old_modifier_settings = []
@@ -575,17 +611,21 @@ def calc_boundbox_max_min(obj):
         for i, mod in enumerate(getattr(orig_obj, "modifiers", [])):
             mod.show_viewport = old_modifier_settings[i]
 
+    if obj.data.shape_keys != None:
+        obj.show_only_shape_key = old_sk_show
+        obj.active_shape_key_index = old_sk_idx
 
     bbox_corners = [Vector(corner) for corner in obj.bound_box]
+    inf = float("inf")
 
-    max_x = -float("inf")
-    min_x = float("inf")
+    max_x = -inf
+    min_x = inf
 
-    max_y = -float("inf")
-    min_y = float("inf")
+    max_y = -inf
+    min_y = inf
 
-    max_z = -float("inf")
-    min_z = float("inf")
+    max_z = -inf
+    min_z = inf
 
     for corner in bbox_corners:
         max_x = max(max_x, corner.x)
@@ -600,3 +640,132 @@ def calc_boundbox_max_min(obj):
     min_bb = [min_x, min_y, min_z]
 
     return max_bb, min_bb
+
+def create_frm_data(obj):
+    if obj.data.shape_keys == None:
+        # Nothing to do here.
+        return None
+
+    skip_entries = ["Basis", "Armature offsets"]
+
+    frames = []
+    # The bounding box for the whole frame bundle
+    inf = float("inf")
+    frm_bb_min = [inf, inf, inf]
+    frm_bb_max = [-inf, -inf, -inf]
+    for block in obj.data.shape_keys.key_blocks:
+        if block.name in skip_entries:
+            continue
+
+        frame_verts = []
+        # Bounding box for the individual frame
+        bb_min = [inf, inf, inf]
+        bb_max = [-inf, -inf, -inf]
+
+        for vert in block.data:
+            # Switch around coordinate system because it is different in CPJ
+            coord = (vert.co.x, vert.co.z, -vert.co.y)
+            # Calculate the bounding box
+            bb_min[0] = min(bb_min[0], coord[0])
+            bb_min[1] = min(bb_min[1], coord[1])
+            bb_min[2] = min(bb_min[2], coord[2])
+
+            bb_max[0] = max(bb_max[0], coord[0])
+            bb_max[1] = max(bb_max[1], coord[1])
+            bb_max[2] = max(bb_max[2], coord[2])
+            # TODO support compression
+            # if frame_groups:
+
+            # Save as Uncompressed vertex data
+            frame_verts.append(coord)
+
+        frame_data = []
+        frame_data.append(block.name)
+        frame_data.append(bb_min)
+        frame_data.append(bb_max)
+
+        num_groups = 0 # TODO used for compression
+        frame_groups = []
+        frame_data.append(num_groups)
+        frame_data.append(frame_groups)
+
+        frame_data.append(len(frame_verts))
+        frame_data.append(frame_verts)
+
+        frames.append(frame_data)
+
+        frm_bb_min[0] = min(frm_bb_min[0], bb_min[0])
+        frm_bb_min[1] = min(frm_bb_min[1], bb_min[1])
+        frm_bb_min[2] = min(frm_bb_min[2], bb_min[2])
+
+        frm_bb_max[0] = max(frm_bb_max[0], bb_max[0])
+        frm_bb_max[1] = max(frm_bb_max[1], bb_max[1])
+        frm_bb_max[2] = max(frm_bb_max[2], bb_max[2])
+
+    if len(frames) == 0:
+        return None
+
+    # Seems like every cpj file I inspected has only one "default" frame block.
+    # Currently this name is not saved anywhere in the imported data. So here we just assume it is "default".
+    frm_block_name = "default"
+    frm_byte_data = create_frm_byte_array(frm_block_name, (frm_bb_min, frm_bb_max), frames)
+
+    return frm_byte_data
+
+def create_seq_data(obj):
+    seq_byte_list = []
+    # Read all animation action strips in the blend file and save the data as cpj SEQ data.
+    for action in bpy.data.actions:
+        frames = []
+        events = []
+        bone_info = []
+        bone_translate = []
+        bone_rotate = []
+        bone_scale = []
+
+        for fcu in action.fcurves:
+
+            print()
+            print(fcu.data_path, fcu.array_index)
+            data_path = fcu.data_path
+            if data_path[:4] == "pose":
+                raise Exception("Armature SEQ data is not supported at the moment.")
+                #temp = data_path.split(".")
+                #key_type = temp[2]
+                #bone_name = temp[1].split('"')[1]
+                #for kp in fcu.keyframe_points:
+                #    print("  Frame %s: %s" % (kp.co[:]))
+            else:
+                # shape key animation
+                key_blocks = obj.data.shape_keys.key_blocks
+                for kp in fcu.keyframe_points:
+                    #frame = kp.co[0]
+                    eval_time = round(kp.co[1])
+                    shape_key_idx = eval_time // 10
+
+                    sk_data = key_blocks[shape_key_idx]
+
+                    frame = []
+                    # Reserved
+                    frame.append(0)
+                    # num_bone_translate
+                    frame.append(0)
+                    # num_bone_rotate
+                    frame.append(0)
+                    # num_bone_scale
+                    frame.append(0)
+                    # first_bone_translate
+                    frame.append(0)
+                    # first_bone_rotate
+                    frame.append(0)
+                    # first_bone_scale
+                    frame.append(0)
+                    vert_frame_name = None
+                    vert_frame_name = sk_data.name
+
+                    frame.append(vert_frame_name)
+
+                    frames.append(frame)
+
+        seq_byte_list.append(create_seq_byte_array(action.name, action["Framerate"], frames, events, bone_info, bone_translate, bone_rotate, bone_scale))
+    return seq_byte_list

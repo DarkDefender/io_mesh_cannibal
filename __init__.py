@@ -99,15 +99,16 @@ class ExportCPJ(bpy.types.Operator, ExportHelper):
     filename_ext = ".cpj"
     filter_glob: StringProperty(default="*.cpj", options={'HIDDEN'})
 
+    skip_animation_export: BoolProperty(
+        name='Skip Animation Export',
+        description='Do not export any animation SEQ data',
+        default=False
+    )
+
     def execute(self, context):
         from . import export_cpj
-        keywords = self.as_keywords(ignore=(
-            "axis_forward",
-            "axis_up",
-            "check_existing",
-            "filter_glob",
-        ))
-        return export_cpj.save(context, **keywords)
+        export_settings = self.as_keywords()
+        return export_cpj.save(context, self.filepath, export_settings)
 
 
 # ----------------------------------------------------------------------------
