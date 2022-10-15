@@ -64,7 +64,7 @@ def save(context, filepath, export_settings):
 
             blocks = obj.data.shape_keys.key_blocks
             if "Armature offsets" in blocks:
-                obj.active_shape_key_index = blocks["Armature offsets"].index
+                obj.active_shape_key_index = blocks.keys().index("Armature offsets")
             else:
                 # The basis shape key is on index 0
                 obj.active_shape_key_index = 0
@@ -113,7 +113,7 @@ def save(context, filepath, export_settings):
             armature.data.pose_position = old_pose_setting
 
         if not export_settings['skip_animation_export']:
-            data_chunks += create_seq_data(obj)
+            data_chunks += create_seq_data(obj, armature)
 
         if apply_modifiers:
             obj.evaluated_get(depsgraph).to_mesh_clear()
@@ -591,7 +591,7 @@ def calc_boundbox_max_min(obj):
 
         blocks = obj.data.shape_keys.key_blocks
         if "Armature offsets" in blocks:
-            obj.active_shape_key_index = blocks["Armature offsets"].index
+            obj.active_shape_key_index = blocks.keys().index("Armature offsets")
         else:
             # The basis shape key is on index 0
             obj.active_shape_key_index = 0
@@ -712,60 +712,162 @@ def create_frm_data(obj):
 
     return frm_byte_data
 
-def create_seq_data(obj):
+def create_seq_data(obj, armature):
     seq_byte_list = []
     # Read all animation action strips in the blend file and save the data as cpj SEQ data.
     for action in bpy.data.actions:
-        frames = []
-        events = []
-        bone_info = []
-        bone_translate = []
-        bone_rotate = []
-        bone_scale = []
+
+        # We have to go via the dict route as we are reading the keys one channel at a time,
+        # not one frame at a time. Therefore the data isn't read in an easy to export format.
+        frame_dict = dict()
+        bone_dict = dict()
+        bone_count = 0
 
         for fcu in action.fcurves:
 
-            print()
-            print(fcu.data_path, fcu.array_index)
+            #print()
+            #print(fcu.data_path, fcu.array_index)
             data_path = fcu.data_path
             if data_path[:4] == "pose":
-                raise Exception("Armature SEQ data is not supported at the moment.")
-                #temp = data_path.split(".")
-                #key_type = temp[2]
-                #bone_name = temp[1].split('"')[1]
-                #for kp in fcu.keyframe_points:
+                temp = data_path.split(".")
+                key_type = temp[2]
+                bone_name = temp[1].split('"')[1]
+
+                if not bone_name in bone_dict:
+                    bone_dict[bone_name] = bone_count
+                    bone_count += 1
+
+                for kp in fcu.keyframe_points:
                 #    print("  Frame %s: %s" % (kp.co[:]))
+                    frame = int(kp.co[0])
+                    value = kp.co[1]
+
+                    if not frame in frame_dict:
+                        frame_dict[frame] = [{}, None]
+
+                    bone_data = frame_dict[frame][0]
+                    if not bone_name in bone_data:
+                        bone_data[bone_name] = [[],[],[]]
+
+                    if key_type == "location":
+                        loc_data = bone_data[bone_name][0]
+                        if len(loc_data) == 0:
+                            loc_data = [0]*3
+                            bone_data[bone_name][0] = loc_data
+                        loc_data[fcu.array_index] = value
+                    elif key_type == "rotation_quaternion":
+                        rot_data = bone_data[bone_name][1]
+                        if len(rot_data) == 0:
+                            rot_data = [0]*4
+                            bone_data[bone_name][1] = rot_data
+                        rot_data[fcu.array_index] = value
+                    elif key_type == "scale":
+                        scale_data = bone_data[bone_name][2]
+                        if len(scale_data) == 0:
+                            scale_data = [0]*3
+                            bone_data[bone_name][2] = scale_data
+                        scale_data[fcu.array_index] = value
+                    else:
+                        raise Exception("Unhandled key type in bone animation export")
+
+            # TODO do a sanity check to see that it is really a shapekey frame
             else:
                 # shape key animation
                 key_blocks = obj.data.shape_keys.key_blocks
                 for kp in fcu.keyframe_points:
-                    #frame = kp.co[0]
+                    frame = int(kp.co[0])
                     eval_time = round(kp.co[1])
                     shape_key_idx = eval_time // 10
 
                     sk_data = key_blocks[shape_key_idx]
 
-                    frame = []
-                    # Reserved
-                    frame.append(0)
-                    # num_bone_translate
-                    frame.append(0)
-                    # num_bone_rotate
-                    frame.append(0)
-                    # num_bone_scale
-                    frame.append(0)
-                    # first_bone_translate
-                    frame.append(0)
-                    # first_bone_rotate
-                    frame.append(0)
-                    # first_bone_scale
-                    frame.append(0)
-                    vert_frame_name = None
-                    vert_frame_name = sk_data.name
+                    if not frame in frame_dict:
+                        frame_dict[frame] = [{}, None]
 
-                    frame.append(vert_frame_name)
+                    # vert_frame_name
+                    frame_dict[frame][1] = sk_data.name
 
-                    frames.append(frame)
+        frames = []
+        events = [] # TODO events
+        bone_info = []
+        bone_translate = []
+        bone_rotate = []
+        bone_scale = []
+
+        # Populate bone_info
+        for bone_name in bone_dict:
+            bone_info.append([bone_name, armature.data.bones[bone_name].length])
+
+        sorted_frames = sorted(frame_dict)
+        min_frame = sorted_frames[0]
+        max_frame = sorted_frames[-1]
+
+        for frame_nr in range(min_frame, max_frame + 1):
+            frame = [0]*8
+
+            if not frame_nr in frame_dict:
+                # Set vertex anim frame name to None
+                frame[7] = None
+                frames.append(frame)
+                continue
+
+            frame_data = frame_dict[frame_nr]
+            bone_data = frame_data[0]
+
+            # Reserved
+            #frame[0] = ...
+
+            if len(bone_data) != 0:
+                num_trans = 0
+                num_rot = 0
+                num_scale = 0
+                start_off_trans = len(bone_translate)
+                start_off_rot = len(bone_rotate)
+                start_off_scale = len(bone_scale)
+
+                for bone_name in bone_data:
+                    bone_idx = bone_dict[bone_name]
+                    transform_data = bone_data[bone_name]
+
+                    if len(transform_data[0]) != 0:
+                        num_trans += 1
+                        trans_data = [bone_idx, 0, transform_data[0]]
+                        bone_translate.append(trans_data)
+
+                    if len(transform_data[1]) != 0:
+                        num_rot += 1
+
+                        quat = mathutils.Quaternion(transform_data[1])
+                        eul = quat.to_euler('ZXY')
+                        roll = int(eul.z / math.pi * 32768)
+                        pitch = int(eul.x / math.pi * 32768)
+                        yaw = int(eul.y / math.pi * 32768)
+
+                        rot_data = [bone_idx, roll, pitch, yaw]
+                        bone_rotate.append(rot_data)
+
+                    if len(transform_data[2]) != 0:
+                        num_scale += 1
+                        scale_data = [bone_idx, 0, transform_data[2]]
+                        bone_scale.append(scale_data)
+
+                # num_bone_translate
+                frame[1] = num_trans
+                # num_bone_rotate
+                frame[2] = num_rot
+                # num_bone_scale
+                frame[3] = num_scale
+                # first_bone_translate
+                frame[4] = start_off_trans
+                # first_bone_rotate
+                frame[5] = start_off_rot
+                # first_bone_scale
+                frame[6] = start_off_scale
+
+            # vert_frame_name
+            frame[7] = frame_data[1]
+
+            frames.append(frame)
 
         seq_byte_list.append(create_seq_byte_array(action.name, action["Framerate"], frames, events, bone_info, bone_translate, bone_rotate, bone_scale))
     return seq_byte_list

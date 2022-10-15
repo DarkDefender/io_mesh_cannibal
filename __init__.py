@@ -393,6 +393,21 @@ class OBJ_PT_panel(bpy.types.Panel):
 
         col.operator(CPJ_ActionPlaybackOperator.bl_idname, text="Setup playback for current action", icon="ARMATURE_DATA")
 
+class POSE_PT_panel(bpy.types.Panel):
+    bl_label = "CPJ helper operators"
+    bl_category = "CPJ Utils"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_context = "posemode"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.label(text="Operators:")
+
+        col = layout.column(align=True)
+        col.operator(CPJ_ActionPlaybackOperator.bl_idname, text="Setup playback for current action", icon="ARMATURE_DATA")
+
 class EDIT_PT_Fpanel(bpy.types.Panel):
     bl_label = "Face attributes"
     bl_category = "CPJ Utils"
@@ -458,6 +473,7 @@ classes = {
     ImportCPJ,
     ExportCPJ,
     OBJ_PT_panel,
+    POSE_PT_panel,
     EDIT_PT_Fpanel,
     EDIT_PT_Vpanel,
     CPJ_InitOperator,
