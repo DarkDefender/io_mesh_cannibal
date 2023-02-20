@@ -748,6 +748,11 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
 
     # TODO only create animation data for skeleton/shape keys if the animations has any keys for them
 
+    if len(seq_data.data_block.frames) == 0:
+        # Some files (like EDF_FrameTest.cpj) has broken sequence data in them.
+        # IE sequences with no frames
+        return
+
     action = None
 
     if armature_obj != "":
@@ -775,6 +780,11 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
 
         if frame.offset_vert_frame_name == -1:
             # No vertex frame data here
+            continue
+
+        if not frame.vert_frame_name in obj_key_data.key_blocks:
+            # Some files like EDF1.cpj has lingering vertex frame animation data but no
+            # vertex frames to go with them.
             continue
 
         shape_key = obj_key_data.key_blocks[frame.vert_frame_name]
