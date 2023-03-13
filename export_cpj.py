@@ -787,6 +787,13 @@ def create_seq_data(obj, armature):
                     # vert_frame_name
                     frame_dict[frame][1] = sk_data.name
 
+        # Sanity check
+        if len(frame_dict) == 0:
+            # There are no animation frames in this action.
+            # We could just ignore this action, but it is probably better to error out and notify the user
+            # that the file is not setup correctly
+            raise Exception("Action " + action.name + " doesn't contain any animation data, either fix or delete the action to procced.")
+
         frames = []
         events = [] # TODO events
         bone_info = []
