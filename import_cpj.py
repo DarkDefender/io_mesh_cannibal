@@ -51,7 +51,7 @@ def get_loaded_data_name_safe(name, load_data_dict):
         if len(split_name) > 1 and split_name[1].isnumeric():
             return match
 
-    raise ImportError("Couldn't load '" + "' as specified in the MAC data. No such data block was loaded into Blender")
+    raise ImportError("Couldn't load '" + name + "' as specified in the MAC data. No such data block was loaded into Blender")
 
 def get_loaded_data_safe(name, load_data_dict):
     safe_name = get_loaded_data_name_safe(name, load_data_dict)
