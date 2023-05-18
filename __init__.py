@@ -288,6 +288,38 @@ def set_selected_face_value(context,layer, value):
     # and recalculate n-gon tessellation.
     bmesh.update_edit_mesh(me)
 
+def select_assigned_faces(context,layer, value, deselect):
+    obj = context.object
+
+    if obj.type != 'MESH':
+        raise Exception("Must be a mesh object")
+    # assuming the object is currently in Edit Mode.
+    me = obj.data
+    bm = bmesh.from_edit_mesh(me)
+
+    value_layer = bm.faces.layers.int[layer]
+
+    for f in bm.faces:
+        if f[value_layer] == value:
+            f.select = not deselect
+
+    # Show the updates in the viewport
+    # and recalculate n-gon tessellation.
+    bmesh.update_edit_mesh(me)
+
+class CPJ_SmoothGroupSelect(Operator):
+    """Selected faces with cpj face group"""
+    bl_idname = "object.cpj_smooth_g_select"
+    bl_label = "Select cpj face group"
+
+    deselect: BoolProperty()
+
+    def execute(self, context):
+        smooth_group = context.scene.cpj_smooth_g
+        select_assigned_faces(context, 'smooth_group', smooth_group, self.deselect)
+
+        return {'FINISHED'}
+
 class CPJ_SmoothGroupAssign(Operator):
     """Set selected cpj face group"""
     bl_idname = "object.cpj_smooth_g_set"
@@ -296,6 +328,19 @@ class CPJ_SmoothGroupAssign(Operator):
     def execute(self, context):
         smooth_group = context.scene.cpj_smooth_g
         set_selected_face_value(context, 'smooth_group', smooth_group)
+
+        return {'FINISHED'}
+
+class CPJ_AlphaSelect(Operator):
+    """Selected faces with cpj alpha level"""
+    bl_idname = "object.cpj_alpha_lvl_select"
+    bl_label = "Select cpj alpha level"
+
+    deselect: BoolProperty()
+
+    def execute(self, context):
+        a_lvl = context.scene.cpj_alpha_lvl
+        select_assigned_faces(context, 'alpha_level', a_lvl, self.deselect)
 
         return {'FINISHED'}
 
@@ -310,6 +355,19 @@ class CPJ_AlphaAssign(Operator):
 
         return {'FINISHED'}
 
+class CPJ_GlazeSelect(Operator):
+    """Selected faces with cpj face glaze texture"""
+    bl_idname = "object.cpj_glaze_select"
+    bl_label = "Select cpj glaze"
+
+    deselect: BoolProperty()
+
+    def execute(self, context):
+        glaze_tex = context.scene.cpj_glaze_tex
+        select_assigned_faces(context, 'glaze_index', glaze_tex, self.deselect)
+
+        return {'FINISHED'}
+
 class CPJ_GlazeAssign(Operator):
     """Set selected cpj face glaze texture"""
     bl_idname = "object.cpj_glaze_set"
@@ -318,6 +376,19 @@ class CPJ_GlazeAssign(Operator):
     def execute(self, context):
         glaze_tex = context.scene.cpj_glaze_tex
         set_selected_face_value(context, 'glaze_index', glaze_tex)
+
+        return {'FINISHED'}
+
+class CPJ_GlazeFuncSelect(Operator):
+    """Selected faces with cpj face glaze function"""
+    bl_idname = "object.cpj_glaze_func_select"
+    bl_label = "Select cpj glaze function"
+
+    deselect: BoolProperty()
+
+    def execute(self, context):
+        glaze_func = context.scene.cpj_glaze_func
+        select_assigned_faces(context, 'glaze_func', glaze_func, self.deselect)
 
         return {'FINISHED'}
 
@@ -432,21 +503,33 @@ class EDIT_PT_Fpanel(bpy.types.Panel):
         row = layout.row(align=True)
         row.operator(CPJ_SmoothGroupAssign.bl_idname, text="Assign")
         row.prop(context.scene, "cpj_smooth_g", text="")
+        row = layout.row(align=True)
+        row.operator(CPJ_SmoothGroupSelect.bl_idname, text="Select").deselect = False
+        row.operator(CPJ_SmoothGroupSelect.bl_idname, text="Deselect").deselect = True
 
         layout.label(text="Alpha Level:")
         row = layout.row(align=True)
         row.operator(CPJ_AlphaAssign.bl_idname, text="Assign")
         row.prop(context.scene, "cpj_alpha_lvl", text="")
+        row = layout.row(align=True)
+        row.operator(CPJ_AlphaSelect.bl_idname, text="Select").deselect = False
+        row.operator(CPJ_AlphaSelect.bl_idname, text="Deselect").deselect = True
 
         layout.label(text="Glaze Texture Index:")
         row = layout.row(align=True)
         row.operator(CPJ_GlazeAssign.bl_idname, text="Assign")
         row.prop(context.scene, "cpj_glaze_tex", text="")
+        row = layout.row(align=True)
+        row.operator(CPJ_GlazeSelect.bl_idname, text="Select").deselect = False
+        row.operator(CPJ_GlazeSelect.bl_idname, text="Deselect").deselect = True
 
         layout.label(text="Glaze Function:")
         row = layout.row(align=True)
         row.operator(CPJ_GlazeFuncAssign.bl_idname, text="Assign")
         row.prop(context.scene, "cpj_glaze_func", text="")
+        row = layout.row(align=True)
+        row.operator(CPJ_GlazeFuncSelect.bl_idname, text="Select").deselect = False
+        row.operator(CPJ_GlazeFuncSelect.bl_idname, text="Deselect").deselect = True
 
 class EDIT_PT_Vpanel(bpy.types.Panel):
     bl_label = "Vertex attributes"
@@ -481,9 +564,13 @@ classes = {
     CPJ_FaceFlagAssign,
     CPJ_FaceFlagRemove,
     CPJ_FaceFlagSelect,
+    CPJ_SmoothGroupSelect,
     CPJ_SmoothGroupAssign,
+    CPJ_AlphaSelect,
     CPJ_AlphaAssign,
+    CPJ_GlazeSelect,
     CPJ_GlazeAssign,
+    CPJ_GlazeFuncSelect,
     CPJ_GlazeFuncAssign,
     CPJ_LODLockAssign,
     CPJ_FRMGroupIndexAssign,

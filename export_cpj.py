@@ -91,6 +91,7 @@ def save(context, filepath, export_settings):
         bmesh.ops.triangulate(bm, faces=bm.faces)
         loops = sum(bm.calc_loop_triangles(),())
 
+        # We pass the object name here as the cpj format don't differentiate between object and mesh data
         data_chunks.append(create_geo_data(obj, obj.name, bm, loops))
 
         frm_byte_data = create_frm_data(obj)
