@@ -877,5 +877,11 @@ def create_seq_data(obj, armature):
 
             frames.append(frame)
 
-        seq_byte_list.append(create_seq_byte_array(action.name, action["Framerate"], frames, events, bone_info, bone_translate, bone_rotate, bone_scale))
+        if "Framerate" in action:
+            framerate = action["Framerate"]
+        else:
+            # Try to be lenient here and assume that the user wants to use the scene playback fps
+            framerate = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
+
+        seq_byte_list.append(create_seq_byte_array(action.name, framerate, frames, events, bone_info, bone_translate, bone_rotate, bone_scale))
     return seq_byte_list
