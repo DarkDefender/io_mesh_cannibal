@@ -71,10 +71,16 @@ def save(context, filepath, export_settings):
 
         if obj_data[2] != "":
             armature = bpy.data.objects[obj_data[2]]
+
+            # Sanity check, ensure that the origin of the armature is the same as the object
+            if armature.matrix_world != obj.matrix_world:
+                raise Exception("The location, rotation and scale has to be the same for the mesh and armature object! (" + obj.name + ", " + armature.name + ")")
+
             # Ensure that the armature is in its rest postion.
             # Otherwise the exported base geometry will be deformed by it
             old_pose_setting = armature.data.pose_position
             armature.data.pose_position = 'REST'
+
         else:
             armature = None
 
@@ -568,6 +574,10 @@ def create_skl_data(obj, me, arm_obj):
 
             bone_name = obj.vertex_groups[group.group].name
             bone_index = bone_list.find(bone_name)
+            if bone_index < 0:
+                # We did not find the bone for the vertex group in the bone list!
+                # Because this can cause bone weights to break in the cpj file, we have to raise an exception.
+                raise Exception("No corresponding bone for vertex group '" + bone_name + "' found. Either delete the vertex group or create a bone for it.")
             bone = bone_list[bone_index]
             offset_pos = bone.matrix_local.inverted() @ vert_data.co
 
@@ -730,9 +740,13 @@ def create_seq_data(obj, armature):
             #print(fcu.data_path, fcu.array_index)
             data_path = fcu.data_path
             if data_path[:4] == "pose":
-                temp = data_path.split(".")
-                key_type = temp[2]
-                bone_name = temp[1].split('"')[1]
+                # data path will look something like this: pose.bones["Bone.006"].location
+                # We will extract the last attribute of the string as the key_type
+                key_type = data_path.split(".")[-1]
+                # Then we will extract the bone name without quotes.
+                start_name = data_path.find("[") + 2
+                end_name = data_path.rfind("]") - 1
+                bone_name = data_path[start_name:end_name]
 
                 if not bone_name in bone_dict:
                     bone_dict[bone_name] = bone_count
@@ -769,10 +783,11 @@ def create_seq_data(obj, armature):
                             bone_data[bone_name][2] = scale_data
                         scale_data[fcu.array_index] = value
                     else:
-                        raise Exception("Unhandled key type in bone animation export")
+                        raise Exception("Unhandled key type in: " + data_path)
 
-            # TODO do a sanity check to see that it is really a shapekey frame
             else:
+                if data_path != "eval_time":
+                    raise Exception("Unhandled key type in: " + data_path)
                 # shape key animation
                 key_blocks = obj.data.shape_keys.key_blocks
                 for kp in fcu.keyframe_points:
@@ -794,6 +809,10 @@ def create_seq_data(obj, armature):
             # We could just ignore this action, but it is probably better to error out and notify the user
             # that the file is not setup correctly
             raise Exception("Action " + action.name + " doesn't contain any animation data, either fix or delete the action to proceed.")
+        if len(bone_dict) != 0 and armature == None:
+            # There are pose actions but no armature defined!
+            # Notify the user that they probably have forgotten to specify "SetSkeleton" in the MAC file
+            raise Exception("Action " + action.name + " contains bone data, but not armature has been defined with 'SetSkeleton' in the MAC file!")
 
         frames = []
         events = [] # TODO events

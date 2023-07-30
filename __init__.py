@@ -153,6 +153,35 @@ class CPJ_InitOperator(Operator):
 
         return {'FINISHED'}
 
+class CPJ_CleanPoseActionOperator(Operator):
+    """Removes all unsupported keyframes from all Actions"""
+    bl_idname = "object.cpj_clean_actions"
+    bl_label = "CPJ remove all unsupported keyframes"
+
+    def execute(self, context):
+        supported_key_types = {"location", "rotation_quaternion", "scale"}
+        deleted_channels = 0
+
+        for action in bpy.data.actions:
+            for fcu in action.fcurves:
+                data_path = fcu.data_path
+                if data_path[:4] == "pose":
+                    # data path will look something like this: pose.bones["Bone.006"].location
+                    # We will extract the last attribute of the string as the key_type
+                    key_type = data_path.split(".")[-1]
+
+                    if key_type not in supported_key_types:
+                        action.fcurves.remove(fcu)
+                        deleted_channels += 1
+                else:
+                    # Shapekey action keyframes
+                    if data_path != "eval_time":
+                        action.fcurves.remove(fcu)
+                        deleted_channels += 1
+
+        self.report({'INFO'}, "Deleted " + str(deleted_channels) + " unsupported action channels")
+        return {'FINISHED'}
+
 class CPJ_ActionPlaybackOperator(Operator):
     """Setup animation playback for the active animation action"""
     bl_idname = "object.cpj_action_playback_range"
@@ -463,6 +492,7 @@ class OBJ_PT_panel(bpy.types.Panel):
         layout.separator()
 
         col.operator(CPJ_ActionPlaybackOperator.bl_idname, text="Setup playback for current action", icon="ARMATURE_DATA")
+        col.operator(CPJ_CleanPoseActionOperator.bl_idname, text="Remove all unsupported keyframes", icon="KEY_DEHLT")
 
 class POSE_PT_panel(bpy.types.Panel):
     bl_label = "CPJ helper operators"
@@ -478,6 +508,7 @@ class POSE_PT_panel(bpy.types.Panel):
 
         col = layout.column(align=True)
         col.operator(CPJ_ActionPlaybackOperator.bl_idname, text="Setup playback for current action", icon="ARMATURE_DATA")
+        col.operator(CPJ_CleanPoseActionOperator.bl_idname, text="Remove all unsupported keyframes", icon="KEY_DEHLT")
 
 class EDIT_PT_Fpanel(bpy.types.Panel):
     bl_label = "Face attributes"
@@ -561,6 +592,7 @@ classes = {
     EDIT_PT_Vpanel,
     CPJ_InitOperator,
     CPJ_ActionPlaybackOperator,
+    CPJ_CleanPoseActionOperator,
     CPJ_FaceFlagAssign,
     CPJ_FaceFlagRemove,
     CPJ_FaceFlagSelect,
