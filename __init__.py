@@ -52,7 +52,7 @@ bl_info = {
     "name": "Cannibal Project (CPJ) format",
     "author": "patwork, ZedDB",
     "version": (0, 0, 1),
-    "blender": (3, 1, 0),
+    "blender": (3, 5, 0),
     "location": "File > Import-Export",
     "description": "Import-Export CPJ",
     "warning": "",
@@ -129,9 +129,14 @@ class CPJ_InitOperator(Operator):
     def execute(self, context):
         obj = context.object
 
+        # TODO Make it easier to setup a mesh+armature combo
         if obj.type != 'MESH':
             raise Exception("Must be a mesh object")
         create_custom_data_layers(obj.data)
+
+        collection = bpy.data.collections.new(obj.name)
+        bpy.context.scene.collection.children.link(collection)
+        collection.objects.link(obj)
 
         mac_text_name = "cpj_" + obj.name
         text_block = bpy.data.texts.new(mac_text_name)
@@ -146,7 +151,7 @@ class CPJ_InitOperator(Operator):
         text_block.write(f'SetBoundsMin {min_bb[0]:.6f} {min_bb[1]:.6f} {min_bb[2]:.6f}\n')
         text_block.write(f'SetBoundsMax {max_bb[0]:.6f} {max_bb[1]:.6f} {max_bb[2]:.6f}\n')
 
-        text_block.write('SetGeometry "' + obj.name + '"\n')
+        text_block.write('SetGeometry "' + obj.data.name + '"\n')
         text_block.write('SetSurface 0 "' + obj.data.uv_layers[0].name + '"\n')
         text_block.write('AddFrames "NULL"\n')
         text_block.write('AddSequences "NULL"\n')

@@ -32,7 +32,28 @@ from cpj_utils import *
 import math
 import shlex
 
+from dataclasses import dataclass
+
+@dataclass
+class MacObjectData:
+    mesh_name: str
+    mesh_object: bpy.types.Object
+    uv_layers: list
+    armature_name: str
+    armature_object: bpy.types.Object
+
 # ----------------------------------------------------------------------------
+def is_name_match_with_dups(name, input_string):
+    # Check if name matches exactly or if there is a ".001" duplication label attached at the end.
+    if name == input_string:
+        return True
+    return input_string.startswith(name) and input_string[len(name)+1].isnumeric()
+
+def find_obj_by_name_with_dups(name, objects):
+    for obj in objects:
+        if is_name_match_with_dups(name, obj.name):
+            return obj
+
 def quat_to_cpj_quat(quat):
     # cpj_quat = x,y,z,w
     cpj_quat = [quat[1], quat[2], quat[3], quat[0]]
@@ -46,15 +67,21 @@ def save(context, filepath, export_settings):
 
     objs_to_process = []
 
+    processed_mesh_names = []
+    processed_uv_names = []
+    processed_armature_names = []
+    frm_populated_obj_name = ""
+
     for text_block in bpy.data.texts:
         if text_block.name.startswith("cpj_"):
             mac_name = text_block.name[4:]
-            mac_data = parse_mac_text(mac_name, text_block.as_string(), text_block.name)
-            data_chunks.append(mac_data[0])
-            objs_to_process.append(mac_data[1:])
+            mac_byte_data, mac_obj_data = parse_mac_text(mac_name, text_block.as_string(), text_block.name)
+            data_chunks.append(mac_byte_data)
+            objs_to_process.append(mac_obj_data)
 
     for obj_data in objs_to_process:
-        obj = bpy.data.objects[obj_data[0]]
+        mesh_name = obj_data.mesh_name
+        obj = obj_data.mesh_object
 
         if obj.data.shape_keys != None:
             # Ensure that the base mesh is exported without any unwanted shapekey deformations
@@ -69,8 +96,8 @@ def save(context, filepath, export_settings):
                 # The basis shape key is on index 0
                 obj.active_shape_key_index = 0
 
-        if obj_data[2] != "":
-            armature = bpy.data.objects[obj_data[2]]
+        armature = obj_data.armature_object
+        if armature:
 
             # Sanity check, ensure that the origin of the armature is the same as the object
             if armature.matrix_world != obj.matrix_world:
@@ -80,9 +107,6 @@ def save(context, filepath, export_settings):
             # Otherwise the exported base geometry will be deformed by it
             old_pose_setting = armature.data.pose_position
             armature.data.pose_position = 'REST'
-
-        else:
-            armature = None
 
         if apply_modifiers:
             depsgraph = context.evaluated_depsgraph_get()
@@ -97,18 +121,26 @@ def save(context, filepath, export_settings):
         bmesh.ops.triangulate(bm, faces=bm.faces)
         loops = sum(bm.calc_loop_triangles(),())
 
-        # We pass the object name here as the cpj format don't differentiate between object and mesh data
-        data_chunks.append(create_geo_data(obj, obj.name, bm, loops))
+        if not mesh_name in processed_mesh_names:
+            data_chunks.append(create_geo_data(obj, mesh_name, bm, loops))
+            processed_mesh_names.append(mesh_name)
 
-        frm_byte_data = create_frm_data(obj)
-        if frm_byte_data != None:
-            data_chunks.append(frm_byte_data)
+            frm_byte_data = create_frm_data(obj)
+            if frm_byte_data != None:
+                if frm_populated_obj_name != "":
+                    raise Exception("Only one FRM data block can be created in a cpj file! Both " + obj.name + " and " + frm_populated_obj_name + " tried to create FRM data")
+                data_chunks.append(frm_byte_data)
+                frm_populated_obj_name = obj.name
 
-        if len(obj_data[1]) > 1:
+        if len(obj_data.uv_layers) > 1:
             raise Exception("Can't handle more that one SRF layer on a mesh currently")
 
-        for uv_name in obj_data[1]:
+        for uv_name in obj_data.uv_layers:
+            if uv_name in processed_uv_names:
+                raise Exception("Tried to add multiple UV layers of the same name: " + uv_name)
+
             data_chunks.append(create_srf_data(obj, uv_name, bm, loops))
+            processed_uv_names.append(uv_name)
         bm.free()
 
         if obj.data.shape_keys != None:
@@ -116,7 +148,10 @@ def save(context, filepath, export_settings):
             obj.active_shape_key_index = old_sk_idx
 
         if armature != None:
-            data_chunks.append(create_skl_data(obj, me, armature))
+            armature_name = obj_data.armature_name
+            if not armature_name in processed_armature_names:
+                data_chunks.append(create_skl_data(obj, me, armature, armature_name))
+                processed_armature_names.append(armature_name)
             armature.data.pose_position = old_pose_setting
 
         if not export_settings['skip_animation_export']:
@@ -163,6 +198,11 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
     if list_size == 0:
         raise Exception("Invalid MAC text command file supplied: " + text_block_name)
 
+    if not mac_name in bpy.data.collections:
+        raise Exception("No matching collection found for: " + text_block_name)
+
+    collection_objs = bpy.data.collections[mac_name].objects
+
     # Data for the mac byte data creator
     section_data = []
     command_strings = []
@@ -170,8 +210,10 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
     command_index = 0
     list_index = 0
 
-    mesh_object_name = ""
+    mesh_name = ""
+    mesh_object = None
     armature_name = ""
+    armature_object = None
     uv_names = []
     found_primary_uv = False
     has_frames = False
@@ -223,12 +265,16 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
 
                 match com[0]:
                     case "SetGeometry":
-                        mesh_object_name = com[1].strip('"')
-                        if not mesh_object_name in bpy.data.objects:
-                            raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object_name + " does not exist")
-                        if bpy.data.objects[mesh_object_name].type != 'MESH':
-                            raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object_name + " is not a mesh" )
-                        mac_add_geo_data_commands(command_strings, bpy.data.objects[mesh_object_name])
+                        mesh_name = com[1].strip('"')
+                        mesh_object = find_obj_by_name_with_dups(mac_name, collection_objs)
+                        if not mesh_object:
+                            raise Exception("Error in: " + text_block_name + "\n A object with the MAC name " + mac_name + " does not exist in the MAC collection")
+                        if mesh_object.type != 'MESH':
+                            raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object.name + " is not a mesh" )
+                        if not is_name_match_with_dups(mesh_name, mesh_object.data.name):
+                            raise Exception("Error in: " + text_block_name + "\n 'SetGeometry' object " + mesh_object.name + ' does not contain a mesh with the name "' + mesh_name +'"' )
+                        # Auto generate the commands in "auto_set_commands" from the mesh object
+                        mac_add_geo_data_commands(command_strings, mesh_object)
                         num_commands += 5
                         command_index += 5
                     case "SetSurface":
@@ -244,9 +290,10 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
                         uv_names.append(com[2].strip('"'))
                     case "SetSkeleton":
                         armature_name = com[1].strip('"')
-                        if not armature_name in bpy.data.objects:
+                        armature_object = find_obj_by_name_with_dups(armature_name, collection_objs)
+                        if not armature_object:
                             raise Exception("Error in: " + text_block_name + "\n 'SetSkeleton' object " + armature_name + " does not exist")
-                        if bpy.data.objects[armature_name].type != 'ARMATURE':
+                        if armature_object.type != 'ARMATURE':
                             raise Exception("Error in: " + text_block_name + "\n 'SetSkeleton' object " + armature_name + " is not an armature" )
                     case "SetAuthor":
                         has_author = True
@@ -271,7 +318,7 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
         section_data.append(sec_data)
 
     # Sanity checks
-    if mesh_object_name == "":
+    if mesh_name == "":
         raise Exception("No mesh object specified in MAC text command file: " + text_block_name)
 
     if len(uv_names) == 0:
@@ -279,8 +326,8 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
     if not found_primary_uv:
         raise Exception("No primary UV was specified in MAC test command file: " + text_block_name)
     for uv_name in uv_names:
-        if not uv_name in bpy.data.objects[mesh_object_name].data.uv_layers:
-            raise Exception(uv_name + " does not exist on the specifed mesh object in MAC command file: " + text_block_name)
+        if not uv_name in mesh_object.data.uv_layers:
+            raise Exception(uv_name + " does not exist in " + mesh_object.name + " picked by the MAC command file: " + text_block_name)
 
     if not has_frames:
         raise Exception("'AddFrames' was not specified in MAC text command file: " + text_block_name)
@@ -292,8 +339,9 @@ def parse_mac_text(mac_name, mac_text, text_block_name):
         raise Exception("'SetDescription' was not specified in MAC text command file: " + text_block_name)
 
     mac_byte_data = create_mac_byte_array(mac_name, section_data, command_strings)
+    mac_obj_data = MacObjectData(mesh_name, mesh_object, uv_names, armature_name, armature_object)
 
-    return (mac_byte_data, mesh_object_name, uv_names, armature_name)
+    return mac_byte_data, mac_obj_data
 
 def get_geo_mount_data(obj, bm):
     mounts = []
@@ -522,7 +570,7 @@ def create_srf_data(obj, uv_name, bm, loops):
 
     return srf_byte_data
 
-def create_skl_data(obj, me, arm_obj):
+def create_skl_data(obj, me, arm_obj, armature_name):
     bone_list = arm_obj.data.bones
 
     bones = []
@@ -587,10 +635,10 @@ def create_skl_data(obj, me, arm_obj):
 
             weights.append(weight_data)
 
-    # TODO mounts
+    # TODO mounts. There doesn't seem to be any existing models with bone mounts, it is even supported in the engine?
     mounts = []
 
-    skl_byte_data = create_skl_byte_array(arm_obj.name, bones, verts, weights, mounts)
+    skl_byte_data = create_skl_byte_array(armature_name, bones, verts, weights, mounts)
 
     return skl_byte_data
 

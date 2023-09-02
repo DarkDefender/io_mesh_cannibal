@@ -46,10 +46,8 @@ def get_loaded_data_name_safe(name, load_data_dict):
     for key in load_data_dict:
         if key.startswith(name):
             match = key
-    if match != "":
-        split_name = match.split('.')
-        if len(split_name) > 1 and split_name[1].isnumeric():
-            return match
+    if match != "" and key[len(name)+1].isnumeric():
+        return match
 
     print(load_data_dict.keys())
     raise ImportError("Couldn't load '" + name + "' as specified in the MAC data. No such data block was loaded into Blender")
