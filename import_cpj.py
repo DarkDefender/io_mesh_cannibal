@@ -733,8 +733,7 @@ def armature_seq(armature_obj, seq_data, ignore_non_existing_bones):
     # There is no way to know if the animation is intended to be cyclic, but just assume this is the case.
     action.use_cyclic = True
     action.frame_start = start_frame
-    # +1 because we want to not loop on the exact last frame.
-    action.frame_end = start_frame + i + 1
+    action.frame_end = start_frame + i
 
     return action
 
@@ -795,8 +794,7 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
     # There is no way to know if the animation is intended to be cyclic, but just assume this is the case.
     action.use_cyclic = True
     action.frame_start = start_frame
-    # +1 because we want to not loop on the exact last frame.
-    action.frame_end = start_frame + i + 1
+    action.frame_end = start_frame + i
 
 
 def load_mac(mac_data):
