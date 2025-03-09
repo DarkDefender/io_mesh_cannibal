@@ -737,12 +737,19 @@ def armature_seq(armature_obj, seq_data, ignore_non_existing_bones):
 
     return action
 
+def add_action_events(action, events):
+    # TODO: only trigger events are currently supported
+    if len(events) == 0:
+        return
+
+    for event in events:
+        if event.event_type == "TRIG":
+            pose_mark = action.pose_markers.new(event.param_str)
+            pose_mark.frame = round(action["Framerate"] * event.time)
+
 def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
     scene = bpy.context.scene
     start_frame = scene.frame_start
-
-    # TODO events can be used to communiate that something should trigger during animation playback
-    #events = seq_data.data_block.events
 
     # TODO only create animation data for skeleton/shape keys if the animations has any keys for them
 
@@ -757,6 +764,7 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
         action = armature_seq(armature_obj, seq_data, ignore_non_existing_bones)
 
     if obj == "":
+        add_action_events(action, seq_data.data_block.events)
         return
 
     # Handle vertex animations
@@ -796,6 +804,7 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
     action.frame_start = start_frame
     action.frame_end = start_frame + i
 
+    add_action_events(action, seq_data.data_block.events)
 
 def load_mac(mac_data):
     autoexec_commands = {}

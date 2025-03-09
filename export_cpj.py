@@ -863,7 +863,7 @@ def create_seq_data(obj, armature):
             raise Exception("Action " + action.name + " contains bone data, but not armature has been defined with 'SetSkeleton' in the MAC file!")
 
         frames = []
-        events = [] # TODO events
+        events = [] # TODO events besides TRIG
         bone_info = []
         bone_translate = []
         bone_rotate = []
@@ -949,6 +949,12 @@ def create_seq_data(obj, armature):
         else:
             # Try to be lenient here and assume that the user wants to use the scene playback fps
             framerate = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
+
+        if len(action.pose_markers) != 0:
+            # Get all markers and convert them to TRIG events
+            for marker in action.pose_markers:
+                event_data = ["TRIG", marker.frame / framerate, marker.name]
+                events.append(event_data)
 
         seq_byte_list.append(create_seq_byte_array(action.name, framerate, frames, events, bone_info, bone_translate, bone_rotate, bone_scale))
     return seq_byte_list
