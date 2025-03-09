@@ -669,10 +669,9 @@ def armature_seq(armature_obj, seq_data, ignore_non_existing_bones):
     bone_trans_data = seq_data.data_block.bone_translate
 
     scene = bpy.context.scene
-    start_frame = scene.frame_start
 
     for i, frame in enumerate(frames):
-        scene.frame_current = start_frame + i
+        scene.frame_current = i
 
         for rot_idx in range(frame.num_bone_rotate):
             bone_rot = bone_rot_data[frame.first_bone_rotate + rot_idx]
@@ -732,8 +731,8 @@ def armature_seq(armature_obj, seq_data, ignore_non_existing_bones):
     action.use_frame_range = True
     # There is no way to know if the animation is intended to be cyclic, but just assume this is the case.
     action.use_cyclic = True
-    action.frame_start = start_frame
-    action.frame_end = start_frame + i
+    action.frame_start = 0
+    action.frame_end = i
 
     return action
 
@@ -744,13 +743,11 @@ def add_action_events(action, events):
 
     for event in events:
         if event.event_type == "TRIG":
+            # Event triggers
             pose_mark = action.pose_markers.new(event.param_str)
             pose_mark.frame = round(action["Framerate"] * event.time)
 
 def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
-    scene = bpy.context.scene
-    start_frame = scene.frame_start
-
     # TODO only create animation data for skeleton/shape keys if the animations has any keys for them
 
     if len(seq_data.data_block.frames) == 0:
@@ -781,8 +778,10 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
 
     frames = seq_data.data_block.frames
 
+    scene = bpy.context.scene
+
     for i, frame in enumerate(frames):
-        scene.frame_current = start_frame + i
+        scene.frame_current = i
 
         if frame.offset_vert_frame_name == -1:
             # No vertex frame data here
@@ -801,8 +800,8 @@ def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
     action.use_frame_range = True
     # There is no way to know if the animation is intended to be cyclic, but just assume this is the case.
     action.use_cyclic = True
-    action.frame_start = start_frame
-    action.frame_end = start_frame + i
+    action.frame_start = 0
+    action.frame_end = i
 
     add_action_events(action, seq_data.data_block.events)
 
