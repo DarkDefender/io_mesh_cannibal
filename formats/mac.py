@@ -4,6 +4,8 @@ import kaitaistruct
 from kaitaistruct import KaitaiStruct, KaitaiStream, BytesIO
 
 
+if getattr(kaitaistruct, 'API_VERSION', (0, 9)) < (0, 9):
+    raise Exception("Incompatible Kaitai Struct Python API: 0.9 or later is required, but you have %s" % (kaitaistruct.__version__))
 
 class Mac(KaitaiStruct):
     """A model actor represents a combination of various resources and represents
@@ -75,30 +77,30 @@ class Mac(KaitaiStruct):
         @property
         def sections(self):
             if hasattr(self, '_m_sections'):
-                return self._m_sections if hasattr(self, '_m_sections') else None
+                return self._m_sections
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_sections)
-            self._m_sections = [None] * (self._root.num_sections)
+            self._m_sections = []
             for i in range(self._root.num_sections):
-                self._m_sections[i] = Mac.Section(self._io, self, self._root)
+                self._m_sections.append(Mac.Section(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_sections if hasattr(self, '_m_sections') else None
+            return getattr(self, '_m_sections', None)
 
         @property
         def commands(self):
             if hasattr(self, '_m_commands'):
-                return self._m_commands if hasattr(self, '_m_commands') else None
+                return self._m_commands
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_commands)
-            self._m_commands = [None] * (self._root.num_commands)
+            self._m_commands = []
             for i in range(self._root.num_commands):
-                self._m_commands[i] = Mac.Command(self._io, self, self._root)
+                self._m_commands.append(Mac.Command(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_commands if hasattr(self, '_m_commands') else None
+            return getattr(self, '_m_commands', None)
 
 
     class Section(KaitaiStruct):
@@ -116,13 +118,13 @@ class Mac(KaitaiStruct):
         @property
         def name(self):
             if hasattr(self, '_m_name'):
-                return self._m_name if hasattr(self, '_m_name') else None
+                return self._m_name
 
             _pos = self._io.pos()
             self._io.seek(self.offset_name)
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
-            return self._m_name if hasattr(self, '_m_name') else None
+            return getattr(self, '_m_name', None)
 
 
     class Command(KaitaiStruct):
@@ -138,19 +140,19 @@ class Mac(KaitaiStruct):
         @property
         def command_str(self):
             if hasattr(self, '_m_command_str'):
-                return self._m_command_str if hasattr(self, '_m_command_str') else None
+                return self._m_command_str
 
             _pos = self._io.pos()
             self._io.seek(self.offset_command_str)
             self._m_command_str = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
-            return self._m_command_str if hasattr(self, '_m_command_str') else None
+            return getattr(self, '_m_command_str', None)
 
 
     @property
     def name(self):
         if hasattr(self, '_m_name'):
-            return self._m_name if hasattr(self, '_m_name') else None
+            return self._m_name
 
         if self.cpj_chunk_header.offset_name != 0:
             _pos = self._io.pos()
@@ -158,6 +160,6 @@ class Mac(KaitaiStruct):
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
 
-        return self._m_name if hasattr(self, '_m_name') else None
+        return getattr(self, '_m_name', None)
 
 

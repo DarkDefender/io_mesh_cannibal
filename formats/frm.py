@@ -4,6 +4,8 @@ import kaitaistruct
 from kaitaistruct import KaitaiStruct, KaitaiStream, BytesIO
 
 
+if getattr(kaitaistruct, 'API_VERSION', (0, 9)) < (0, 9):
+    raise Exception("Incompatible Kaitai Struct Python API: 0.9 or later is required, but you have %s" % (kaitaistruct.__version__))
 
 class Frm(KaitaiStruct):
     """A vertex frames chunk holds one or more vertex frames.  Each vertex frame
@@ -49,47 +51,47 @@ class Frm(KaitaiStruct):
         @property
         def name(self):
             if hasattr(self, '_m_name'):
-                return self._m_name if hasattr(self, '_m_name') else None
+                return self._m_name
 
             _pos = self._io.pos()
             self._io.seek(self.offset_name)
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
-            return self._m_name if hasattr(self, '_m_name') else None
+            return getattr(self, '_m_name', None)
 
         @property
         def groups(self):
             if hasattr(self, '_m_groups'):
-                return self._m_groups if hasattr(self, '_m_groups') else None
+                return self._m_groups
 
             if self.num_groups != 0:
                 _pos = self._io.pos()
                 self._io.seek(self.data_offset_groups)
-                self._m_groups = [None] * (self.num_groups)
+                self._m_groups = []
                 for i in range(self.num_groups):
-                    self._m_groups[i] = Frm.Group(self._io, self, self._root)
+                    self._m_groups.append(Frm.Group(self._io, self, self._root))
 
                 self._io.seek(_pos)
 
-            return self._m_groups if hasattr(self, '_m_groups') else None
+            return getattr(self, '_m_groups', None)
 
         @property
         def verts(self):
             if hasattr(self, '_m_verts'):
-                return self._m_verts if hasattr(self, '_m_verts') else None
+                return self._m_verts
 
             _pos = self._io.pos()
             self._io.seek(self.data_offset_verts)
-            self._m_verts = [None] * (self.num_verts)
+            self._m_verts = []
             for i in range(self.num_verts):
                 _on = self.num_groups
                 if _on == 0:
-                    self._m_verts[i] = Frm.Vec3f(self._io, self, self._root)
+                    self._m_verts.append(Frm.Vec3f(self._io, self, self._root))
                 else:
-                    self._m_verts[i] = Frm.BytePos(self._io, self, self._root)
+                    self._m_verts.append(Frm.BytePos(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_verts if hasattr(self, '_m_verts') else None
+            return getattr(self, '_m_verts', None)
 
 
     class CpjChunkHeader(KaitaiStruct):
@@ -118,9 +120,9 @@ class Frm(KaitaiStruct):
 
         def _read(self):
             self.group = self._io.read_u1()
-            self.pos = [None] * (3)
+            self.pos = []
             for i in range(3):
-                self.pos[i] = self._io.read_u1()
+                self.pos.append(self._io.read_u1())
 
 
 
@@ -137,16 +139,16 @@ class Frm(KaitaiStruct):
         @property
         def frames(self):
             if hasattr(self, '_m_frames'):
-                return self._m_frames if hasattr(self, '_m_frames') else None
+                return self._m_frames
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_frames)
-            self._m_frames = [None] * (self._root.num_frames)
+            self._m_frames = []
             for i in range(self._root.num_frames):
-                self._m_frames[i] = Frm.Frame(self._io, self, self._root)
+                self._m_frames.append(Frm.Frame(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_frames if hasattr(self, '_m_frames') else None
+            return getattr(self, '_m_frames', None)
 
 
     class Vec3f(KaitaiStruct):
@@ -177,7 +179,7 @@ class Frm(KaitaiStruct):
     @property
     def name(self):
         if hasattr(self, '_m_name'):
-            return self._m_name if hasattr(self, '_m_name') else None
+            return self._m_name
 
         if self.cpj_chunk_header.offset_name != 0:
             _pos = self._io.pos()
@@ -185,6 +187,6 @@ class Frm(KaitaiStruct):
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
 
-        return self._m_name if hasattr(self, '_m_name') else None
+        return getattr(self, '_m_name', None)
 
 

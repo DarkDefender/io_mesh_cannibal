@@ -4,6 +4,8 @@ import kaitaistruct
 from kaitaistruct import KaitaiStruct, KaitaiStream, BytesIO
 
 
+if getattr(kaitaistruct, 'API_VERSION', (0, 9)) < (0, 9):
+    raise Exception("Incompatible Kaitai Struct Python API: 0.9 or later is required, but you have %s" % (kaitaistruct.__version__))
 
 class Geo(KaitaiStruct):
     """These chunks contain a description of a model's triangular mesh geometry
@@ -63,9 +65,9 @@ class Geo(KaitaiStruct):
             self._read()
 
         def _read(self):
-            self.edge_ring = [None] * (3)
+            self.edge_ring = []
             for i in range(3):
-                self.edge_ring[i] = self._io.read_u2le()
+                self.edge_ring.append(self._io.read_u2le())
 
             self.reserved = self._io.read_u2le()
 
@@ -112,72 +114,72 @@ class Geo(KaitaiStruct):
         @property
         def triangles(self):
             if hasattr(self, '_m_triangles'):
-                return self._m_triangles if hasattr(self, '_m_triangles') else None
+                return self._m_triangles
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_tris)
-            self._m_triangles = [None] * (self._root.num_tris)
+            self._m_triangles = []
             for i in range(self._root.num_tris):
-                self._m_triangles[i] = Geo.Tri(self._io, self, self._root)
+                self._m_triangles.append(Geo.Tri(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_triangles if hasattr(self, '_m_triangles') else None
+            return getattr(self, '_m_triangles', None)
 
         @property
         def obj_links(self):
             if hasattr(self, '_m_obj_links'):
-                return self._m_obj_links if hasattr(self, '_m_obj_links') else None
+                return self._m_obj_links
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_obj_links)
-            self._m_obj_links = [None] * (self._root.num_obj_links)
+            self._m_obj_links = []
             for i in range(self._root.num_obj_links):
-                self._m_obj_links[i] = Geo.ObjLink(self._io, self, self._root)
+                self._m_obj_links.append(Geo.ObjLink(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_obj_links if hasattr(self, '_m_obj_links') else None
+            return getattr(self, '_m_obj_links', None)
 
         @property
         def vertices(self):
             if hasattr(self, '_m_vertices'):
-                return self._m_vertices if hasattr(self, '_m_vertices') else None
+                return self._m_vertices
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_verts)
-            self._m_vertices = [None] * (self._root.num_verts)
+            self._m_vertices = []
             for i in range(self._root.num_verts):
-                self._m_vertices[i] = Geo.Vert(self._io, self, self._root)
+                self._m_vertices.append(Geo.Vert(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_vertices if hasattr(self, '_m_vertices') else None
+            return getattr(self, '_m_vertices', None)
 
         @property
         def mounts(self):
             if hasattr(self, '_m_mounts'):
-                return self._m_mounts if hasattr(self, '_m_mounts') else None
+                return self._m_mounts
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_mounts)
-            self._m_mounts = [None] * (self._root.num_mounts)
+            self._m_mounts = []
             for i in range(self._root.num_mounts):
-                self._m_mounts[i] = Geo.Mount(self._io, self, self._root)
+                self._m_mounts.append(Geo.Mount(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_mounts if hasattr(self, '_m_mounts') else None
+            return getattr(self, '_m_mounts', None)
 
         @property
         def edges(self):
             if hasattr(self, '_m_edges'):
-                return self._m_edges if hasattr(self, '_m_edges') else None
+                return self._m_edges
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_edges)
-            self._m_edges = [None] * (self._root.num_edges)
+            self._m_edges = []
             for i in range(self._root.num_edges):
-                self._m_edges[i] = Geo.Edge(self._io, self, self._root)
+                self._m_edges.append(Geo.Edge(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_edges if hasattr(self, '_m_edges') else None
+            return getattr(self, '_m_edges', None)
 
 
     class Vec3f(KaitaiStruct):
@@ -226,13 +228,13 @@ class Geo(KaitaiStruct):
         @property
         def name(self):
             if hasattr(self, '_m_name'):
-                return self._m_name if hasattr(self, '_m_name') else None
+                return self._m_name
 
             _pos = self._io.pos()
             self._io.seek(self.offset_name)
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
-            return self._m_name if hasattr(self, '_m_name') else None
+            return getattr(self, '_m_name', None)
 
 
     class ObjLink(KaitaiStruct):
@@ -249,7 +251,7 @@ class Geo(KaitaiStruct):
     @property
     def name(self):
         if hasattr(self, '_m_name'):
-            return self._m_name if hasattr(self, '_m_name') else None
+            return self._m_name
 
         if self.cpj_chunk_header.offset_name != 0:
             _pos = self._io.pos()
@@ -257,6 +259,6 @@ class Geo(KaitaiStruct):
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
 
-        return self._m_name if hasattr(self, '_m_name') else None
+        return getattr(self, '_m_name', None)
 
 

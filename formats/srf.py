@@ -4,6 +4,8 @@ import kaitaistruct
 from kaitaistruct import KaitaiStruct, KaitaiStream, BytesIO
 
 
+if getattr(kaitaistruct, 'API_VERSION', (0, 9)) < (0, 9):
+    raise Exception("Incompatible Kaitai Struct Python API: 0.9 or later is required, but you have %s" % (kaitaistruct.__version__))
 
 class Srf(KaitaiStruct):
     """The surface chunk of a model describes the surface properties of its
@@ -56,9 +58,9 @@ class Srf(KaitaiStruct):
             self._read()
 
         def _read(self):
-            self.uv_index = [None] * (3)
+            self.uv_index = []
             for i in range(3):
-                self.uv_index[i] = self._io.read_u2le()
+                self.uv_index.append(self._io.read_u2le())
 
             self.tex_index = self._io.read_u1()
             self.reserved = self._io.read_u1()
@@ -99,44 +101,44 @@ class Srf(KaitaiStruct):
         @property
         def textures(self):
             if hasattr(self, '_m_textures'):
-                return self._m_textures if hasattr(self, '_m_textures') else None
+                return self._m_textures
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_textures)
-            self._m_textures = [None] * (self._root.num_textures)
+            self._m_textures = []
             for i in range(self._root.num_textures):
-                self._m_textures[i] = Srf.Texture(self._io, self, self._root)
+                self._m_textures.append(Srf.Texture(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_textures if hasattr(self, '_m_textures') else None
+            return getattr(self, '_m_textures', None)
 
         @property
         def tris(self):
             if hasattr(self, '_m_tris'):
-                return self._m_tris if hasattr(self, '_m_tris') else None
+                return self._m_tris
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_tris)
-            self._m_tris = [None] * (self._root.num_tris)
+            self._m_tris = []
             for i in range(self._root.num_tris):
-                self._m_tris[i] = Srf.Tri(self._io, self, self._root)
+                self._m_tris.append(Srf.Tri(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_tris if hasattr(self, '_m_tris') else None
+            return getattr(self, '_m_tris', None)
 
         @property
         def uvs(self):
             if hasattr(self, '_m_uvs'):
-                return self._m_uvs if hasattr(self, '_m_uvs') else None
+                return self._m_uvs
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_uv)
-            self._m_uvs = [None] * (self._root.num_uv)
+            self._m_uvs = []
             for i in range(self._root.num_uv):
-                self._m_uvs[i] = Srf.Uv(self._io, self, self._root)
+                self._m_uvs.append(Srf.Uv(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_uvs if hasattr(self, '_m_uvs') else None
+            return getattr(self, '_m_uvs', None)
 
 
     class Texture(KaitaiStruct):
@@ -153,18 +155,18 @@ class Srf(KaitaiStruct):
         @property
         def name(self):
             if hasattr(self, '_m_name'):
-                return self._m_name if hasattr(self, '_m_name') else None
+                return self._m_name
 
             _pos = self._io.pos()
             self._io.seek(self.offset_name)
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
-            return self._m_name if hasattr(self, '_m_name') else None
+            return getattr(self, '_m_name', None)
 
         @property
         def ref_name(self):
             if hasattr(self, '_m_ref_name'):
-                return self._m_ref_name if hasattr(self, '_m_ref_name') else None
+                return self._m_ref_name
 
             if self.offset_ref_name != 0:
                 _pos = self._io.pos()
@@ -172,13 +174,13 @@ class Srf(KaitaiStruct):
                 self._m_ref_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
                 self._io.seek(_pos)
 
-            return self._m_ref_name if hasattr(self, '_m_ref_name') else None
+            return getattr(self, '_m_ref_name', None)
 
 
     @property
     def name(self):
         if hasattr(self, '_m_name'):
-            return self._m_name if hasattr(self, '_m_name') else None
+            return self._m_name
 
         if self.cpj_chunk_header.offset_name != 0:
             _pos = self._io.pos()
@@ -186,6 +188,6 @@ class Srf(KaitaiStruct):
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
 
-        return self._m_name if hasattr(self, '_m_name') else None
+        return getattr(self, '_m_name', None)
 
 

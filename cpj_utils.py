@@ -29,7 +29,7 @@ def load_cpj_data(file_path):
         chunk_data = sub_chunk.chunk_data.data
         # Make sure that the byte array is as if we split this out as a new file
         # Add back the file length
-        chunk_data = struct.pack("I", sub_chunk.chunk.len) + chunk_data
+        chunk_data = struct.pack("I", sub_chunk.chunk.len_data_slot) + chunk_data
         # And the magic id number
         chunk_data = struct.pack("I", sub_chunk.chunk.id) + chunk_data
 
@@ -587,7 +587,7 @@ def create_seq_byte_array(name, play_rate, frames, events, bone_info, bone_trans
     # Write event data
     for i, event_data in enumerate(events):
         # event_type
-        byte_arr += struct.pack("I", event_data[0])
+        byte_arr += bytes(event_data[0], "ASCII")
         # time
         byte_arr += struct.pack("f", event_data[1])
         # offset_param_str

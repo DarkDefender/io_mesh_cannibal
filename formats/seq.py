@@ -4,6 +4,8 @@ import kaitaistruct
 from kaitaistruct import KaitaiStruct, KaitaiStream, BytesIO
 
 
+if getattr(kaitaistruct, 'API_VERSION', (0, 9)) < (0, 9):
+    raise Exception("Incompatible Kaitai Struct Python API: 0.9 or later is required, but you have %s" % (kaitaistruct.__version__))
 
 class Seq(KaitaiStruct):
     """A sequenced animation chunk contains an animation sequence in the form frame
@@ -71,13 +73,13 @@ class Seq(KaitaiStruct):
         @property
         def name(self):
             if hasattr(self, '_m_name'):
-                return self._m_name if hasattr(self, '_m_name') else None
+                return self._m_name
 
             _pos = self._io.pos()
             self._io.seek(self.offset_name)
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
-            return self._m_name if hasattr(self, '_m_name') else None
+            return getattr(self, '_m_name', None)
 
 
     class Event(KaitaiStruct):
@@ -88,14 +90,14 @@ class Seq(KaitaiStruct):
             self._read()
 
         def _read(self):
-            self.event_type = self._io.read_u4le()
+            self.event_type = (self._io.read_bytes(4)).decode(u"ASCII")
             self.time = self._io.read_f4le()
             self.offset_param_str = self._io.read_s4le()
 
         @property
         def param_str(self):
             if hasattr(self, '_m_param_str'):
-                return self._m_param_str if hasattr(self, '_m_param_str') else None
+                return self._m_param_str
 
             if self.offset_param_str != -1:
                 _pos = self._io.pos()
@@ -103,7 +105,7 @@ class Seq(KaitaiStruct):
                 self._m_param_str = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
                 self._io.seek(_pos)
 
-            return self._m_param_str if hasattr(self, '_m_param_str') else None
+            return getattr(self, '_m_param_str', None)
 
 
     class BoneRotate(KaitaiStruct):
@@ -140,7 +142,7 @@ class Seq(KaitaiStruct):
         @property
         def vert_frame_name(self):
             if hasattr(self, '_m_vert_frame_name'):
-                return self._m_vert_frame_name if hasattr(self, '_m_vert_frame_name') else None
+                return self._m_vert_frame_name
 
             if self.offset_vert_frame_name != -1:
                 _pos = self._io.pos()
@@ -148,7 +150,7 @@ class Seq(KaitaiStruct):
                 self._m_vert_frame_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
                 self._io.seek(_pos)
 
-            return self._m_vert_frame_name if hasattr(self, '_m_vert_frame_name') else None
+            return getattr(self, '_m_vert_frame_name', None)
 
 
     class CpjChunkHeader(KaitaiStruct):
@@ -181,86 +183,86 @@ class Seq(KaitaiStruct):
         @property
         def frames(self):
             if hasattr(self, '_m_frames'):
-                return self._m_frames if hasattr(self, '_m_frames') else None
+                return self._m_frames
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_frames)
-            self._m_frames = [None] * (self._root.num_frames)
+            self._m_frames = []
             for i in range(self._root.num_frames):
-                self._m_frames[i] = Seq.Frame(self._io, self, self._root)
+                self._m_frames.append(Seq.Frame(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_frames if hasattr(self, '_m_frames') else None
+            return getattr(self, '_m_frames', None)
 
         @property
         def bone_rotate(self):
             if hasattr(self, '_m_bone_rotate'):
-                return self._m_bone_rotate if hasattr(self, '_m_bone_rotate') else None
+                return self._m_bone_rotate
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_bone_rotate)
-            self._m_bone_rotate = [None] * (self._root.num_bone_rotate)
+            self._m_bone_rotate = []
             for i in range(self._root.num_bone_rotate):
-                self._m_bone_rotate[i] = Seq.BoneRotate(self._io, self, self._root)
+                self._m_bone_rotate.append(Seq.BoneRotate(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_bone_rotate if hasattr(self, '_m_bone_rotate') else None
+            return getattr(self, '_m_bone_rotate', None)
 
         @property
         def bone_info(self):
             if hasattr(self, '_m_bone_info'):
-                return self._m_bone_info if hasattr(self, '_m_bone_info') else None
+                return self._m_bone_info
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_bone_info)
-            self._m_bone_info = [None] * (self._root.num_bone_info)
+            self._m_bone_info = []
             for i in range(self._root.num_bone_info):
-                self._m_bone_info[i] = Seq.BoneInfo(self._io, self, self._root)
+                self._m_bone_info.append(Seq.BoneInfo(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_bone_info if hasattr(self, '_m_bone_info') else None
+            return getattr(self, '_m_bone_info', None)
 
         @property
         def bone_scale(self):
             if hasattr(self, '_m_bone_scale'):
-                return self._m_bone_scale if hasattr(self, '_m_bone_scale') else None
+                return self._m_bone_scale
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_bone_scale)
-            self._m_bone_scale = [None] * (self._root.num_bone_scale)
+            self._m_bone_scale = []
             for i in range(self._root.num_bone_scale):
-                self._m_bone_scale[i] = Seq.BoneScale(self._io, self, self._root)
+                self._m_bone_scale.append(Seq.BoneScale(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_bone_scale if hasattr(self, '_m_bone_scale') else None
+            return getattr(self, '_m_bone_scale', None)
 
         @property
         def bone_translate(self):
             if hasattr(self, '_m_bone_translate'):
-                return self._m_bone_translate if hasattr(self, '_m_bone_translate') else None
+                return self._m_bone_translate
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_bone_translate)
-            self._m_bone_translate = [None] * (self._root.num_bone_translate)
+            self._m_bone_translate = []
             for i in range(self._root.num_bone_translate):
-                self._m_bone_translate[i] = Seq.BoneTranslate(self._io, self, self._root)
+                self._m_bone_translate.append(Seq.BoneTranslate(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_bone_translate if hasattr(self, '_m_bone_translate') else None
+            return getattr(self, '_m_bone_translate', None)
 
         @property
         def events(self):
             if hasattr(self, '_m_events'):
-                return self._m_events if hasattr(self, '_m_events') else None
+                return self._m_events
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_events)
-            self._m_events = [None] * (self._root.num_events)
+            self._m_events = []
             for i in range(self._root.num_events):
-                self._m_events[i] = Seq.Event(self._io, self, self._root)
+                self._m_events.append(Seq.Event(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_events if hasattr(self, '_m_events') else None
+            return getattr(self, '_m_events', None)
 
 
     class BoneTranslate(KaitaiStruct):
@@ -305,7 +307,7 @@ class Seq(KaitaiStruct):
     @property
     def name(self):
         if hasattr(self, '_m_name'):
-            return self._m_name if hasattr(self, '_m_name') else None
+            return self._m_name
 
         if self.cpj_chunk_header.offset_name != 0:
             _pos = self._io.pos()
@@ -313,6 +315,6 @@ class Seq(KaitaiStruct):
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
 
-        return self._m_name if hasattr(self, '_m_name') else None
+        return getattr(self, '_m_name', None)
 
 

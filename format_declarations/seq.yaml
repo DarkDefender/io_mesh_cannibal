@@ -148,7 +148,9 @@ types:
   event:
     seq:
       - id: event_type
-        type: u4
+        type: str
+        size: 4
+        encoding: ASCII
       - id: time
         type: f4
       - id: offset_param_str

@@ -4,6 +4,8 @@ import kaitaistruct
 from kaitaistruct import KaitaiStruct, KaitaiStream, BytesIO
 
 
+if getattr(kaitaistruct, 'API_VERSION', (0, 9)) < (0, 9):
+    raise Exception("Incompatible Kaitai Struct Python API: 0.9 or later is required, but you have %s" % (kaitaistruct.__version__))
 
 class Lod(KaitaiStruct):
     """These chunks store level of detail reduction information based on a specific
@@ -74,44 +76,44 @@ class Lod(KaitaiStruct):
         @property
         def levels(self):
             if hasattr(self, '_m_levels'):
-                return self._m_levels if hasattr(self, '_m_levels') else None
+                return self._m_levels
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_levels)
-            self._m_levels = [None] * (self._root.num_levels)
+            self._m_levels = []
             for i in range(self._root.num_levels):
-                self._m_levels[i] = Lod.Level(self._io, self, self._root)
+                self._m_levels.append(Lod.Level(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_levels if hasattr(self, '_m_levels') else None
+            return getattr(self, '_m_levels', None)
 
         @property
         def tris(self):
             if hasattr(self, '_m_tris'):
-                return self._m_tris if hasattr(self, '_m_tris') else None
+                return self._m_tris
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_tris)
-            self._m_tris = [None] * (self._root.num_tris)
+            self._m_tris = []
             for i in range(self._root.num_tris):
-                self._m_tris[i] = Lod.Tri(self._io, self, self._root)
+                self._m_tris.append(Lod.Tri(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_tris if hasattr(self, '_m_tris') else None
+            return getattr(self, '_m_tris', None)
 
         @property
         def vert_relay(self):
             if hasattr(self, '_m_vert_relay'):
-                return self._m_vert_relay if hasattr(self, '_m_vert_relay') else None
+                return self._m_vert_relay
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_vert_relay)
-            self._m_vert_relay = [None] * (self._root.num_vert_relay)
+            self._m_vert_relay = []
             for i in range(self._root.num_vert_relay):
-                self._m_vert_relay[i] = self._io.read_u2le()
+                self._m_vert_relay.append(self._io.read_u2le())
 
             self._io.seek(_pos)
-            return self._m_vert_relay if hasattr(self, '_m_vert_relay') else None
+            return getattr(self, '_m_vert_relay', None)
 
 
     class Level(KaitaiStruct):
@@ -138,20 +140,20 @@ class Lod(KaitaiStruct):
 
         def _read(self):
             self.tri_index = self._io.read_u4le()
-            self.vert_index = [None] * (3)
+            self.vert_index = []
             for i in range(3):
-                self.vert_index[i] = self._io.read_u2le()
+                self.vert_index.append(self._io.read_u2le())
 
-            self.uv_index = [None] * (3)
+            self.uv_index = []
             for i in range(3):
-                self.uv_index[i] = self._io.read_u2le()
+                self.uv_index.append(self._io.read_u2le())
 
 
 
     @property
     def name(self):
         if hasattr(self, '_m_name'):
-            return self._m_name if hasattr(self, '_m_name') else None
+            return self._m_name
 
         if self.cpj_chunk_header.offset_name != 0:
             _pos = self._io.pos()
@@ -159,6 +161,6 @@ class Lod(KaitaiStruct):
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
 
-        return self._m_name if hasattr(self, '_m_name') else None
+        return getattr(self, '_m_name', None)
 
 

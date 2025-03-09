@@ -4,6 +4,8 @@ import kaitaistruct
 from kaitaistruct import KaitaiStruct, KaitaiStream, BytesIO
 
 
+if getattr(kaitaistruct, 'API_VERSION', (0, 9)) < (0, 9):
+    raise Exception("Incompatible Kaitai Struct Python API: 0.9 or later is required, but you have %s" % (kaitaistruct.__version__))
 
 class Skl(KaitaiStruct):
     """These chunks, if present, allow a model to be capable of skeletal-based
@@ -80,13 +82,13 @@ class Skl(KaitaiStruct):
         @property
         def name(self):
             if hasattr(self, '_m_name'):
-                return self._m_name if hasattr(self, '_m_name') else None
+                return self._m_name
 
             _pos = self._io.pos()
             self._io.seek(self.offset_name)
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
-            return self._m_name if hasattr(self, '_m_name') else None
+            return getattr(self, '_m_name', None)
 
 
     class CpjChunkHeader(KaitaiStruct):
@@ -131,58 +133,58 @@ class Skl(KaitaiStruct):
         @property
         def bones(self):
             if hasattr(self, '_m_bones'):
-                return self._m_bones if hasattr(self, '_m_bones') else None
+                return self._m_bones
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_bones)
-            self._m_bones = [None] * (self._root.num_bones)
+            self._m_bones = []
             for i in range(self._root.num_bones):
-                self._m_bones[i] = Skl.Bone(self._io, self, self._root)
+                self._m_bones.append(Skl.Bone(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_bones if hasattr(self, '_m_bones') else None
+            return getattr(self, '_m_bones', None)
 
         @property
         def verts(self):
             if hasattr(self, '_m_verts'):
-                return self._m_verts if hasattr(self, '_m_verts') else None
+                return self._m_verts
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_verts)
-            self._m_verts = [None] * (self._root.num_verts)
+            self._m_verts = []
             for i in range(self._root.num_verts):
-                self._m_verts[i] = Skl.Vert(self._io, self, self._root)
+                self._m_verts.append(Skl.Vert(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_verts if hasattr(self, '_m_verts') else None
+            return getattr(self, '_m_verts', None)
 
         @property
         def weights(self):
             if hasattr(self, '_m_weights'):
-                return self._m_weights if hasattr(self, '_m_weights') else None
+                return self._m_weights
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_weights)
-            self._m_weights = [None] * (self._root.num_weights)
+            self._m_weights = []
             for i in range(self._root.num_weights):
-                self._m_weights[i] = Skl.Weight(self._io, self, self._root)
+                self._m_weights.append(Skl.Weight(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_weights if hasattr(self, '_m_weights') else None
+            return getattr(self, '_m_weights', None)
 
         @property
         def mounts(self):
             if hasattr(self, '_m_mounts'):
-                return self._m_mounts if hasattr(self, '_m_mounts') else None
+                return self._m_mounts
 
             _pos = self._io.pos()
             self._io.seek(self._root.data_offset_mounts)
-            self._m_mounts = [None] * (self._root.num_mounts)
+            self._m_mounts = []
             for i in range(self._root.num_mounts):
-                self._m_mounts[i] = Skl.Mount(self._io, self, self._root)
+                self._m_mounts.append(Skl.Mount(self._io, self, self._root))
 
             self._io.seek(_pos)
-            return self._m_mounts if hasattr(self, '_m_mounts') else None
+            return getattr(self, '_m_mounts', None)
 
 
     class Vec3f(KaitaiStruct):
@@ -215,19 +217,19 @@ class Skl(KaitaiStruct):
         @property
         def name(self):
             if hasattr(self, '_m_name'):
-                return self._m_name if hasattr(self, '_m_name') else None
+                return self._m_name
 
             _pos = self._io.pos()
             self._io.seek(self.offset_name)
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
-            return self._m_name if hasattr(self, '_m_name') else None
+            return getattr(self, '_m_name', None)
 
 
     @property
     def name(self):
         if hasattr(self, '_m_name'):
-            return self._m_name if hasattr(self, '_m_name') else None
+            return self._m_name
 
         if self.cpj_chunk_header.offset_name != 0:
             _pos = self._io.pos()
@@ -235,6 +237,6 @@ class Skl(KaitaiStruct):
             self._m_name = (self._io.read_bytes_term(0, False, True, True)).decode(u"ASCII")
             self._io.seek(_pos)
 
-        return self._m_name if hasattr(self, '_m_name') else None
+        return getattr(self, '_m_name', None)
 
 

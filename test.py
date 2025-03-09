@@ -1,8 +1,21 @@
+import sys
+from pathlib import Path
+
 from cpj_utils import *
 from compare_data import *
 from test_utils import *
 
-file_data1 = load_cpj_data("../Database/MainAnimsData/AllBones/AllBones.cpj")
+if len(sys.argv) != 2:
+    print("You need to supply the cpj file path!")
+    exit(1)
+
+cpj_path = Path(sys.argv[1])
+
+if not cpj_path.exists():
+    print(f"Not a valid path {cpj_path}")
+    exit(1)
+
+file_data1 = load_cpj_data(sys.argv[1])
 #file_data2 = load_cpj_data("/tmp/smokealarm.cpj")
 
 frm_byte_data_list = []
