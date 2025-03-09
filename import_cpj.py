@@ -737,15 +737,26 @@ def armature_seq(armature_obj, seq_data, ignore_non_existing_bones):
     return action
 
 def add_action_events(action, events):
-    # TODO: only trigger events are currently supported
+    # TODO: only trigger and triflag events are currently supported
     if len(events) == 0:
         return
+
+    triflag_events = 0
 
     for event in events:
         if event.event_type == "TRIG":
             # Event triggers
             pose_mark = action.pose_markers.new(event.param_str)
             pose_mark.frame = round(action["Framerate"] * event.time)
+        elif event.event_type == "TFLG":
+            # Event triangle flag manipulation
+            event_name = f"TFLG{triflag_events}"
+            pose_mark = action.pose_markers.new(event_name)
+            pose_mark.frame = round(action["Framerate"] * event.time)
+            action[event_name] = event.param_str 
+            triflag_events = triflag_events + 1
+        else:
+            raise ImportError(f"Event type {event.event_type} is not yet supported...")
 
 def load_seq(seq_data, obj, armature_obj, ignore_non_existing_bones):
     # TODO only create animation data for skeleton/shape keys if the animations has any keys for them
