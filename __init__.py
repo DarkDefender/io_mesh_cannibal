@@ -187,6 +187,16 @@ class CPJ_CleanPoseActionOperator(Operator):
         self.report({'INFO'}, "Deleted " + str(deleted_channels) + " unsupported action channels")
         return {'FINISHED'}
 
+def get_current_action(obj):
+    if obj.animation_data != None:
+        action = obj.animation_data.action
+    elif obj.data.shape_keys.animation_data != None:
+        action = obj.data.shape_keys.animation_data.action
+    else:
+        raise Exception("No animation/action data present on the active object!")
+    return action
+
+
 class CPJ_ActionPlaybackOperator(Operator):
     """Setup animation playback for the active animation action"""
     bl_idname = "object.cpj_action_playback_range"
@@ -196,12 +206,7 @@ class CPJ_ActionPlaybackOperator(Operator):
         obj = context.object
 
         # TODO make a seperate operator for shape key actions
-        if obj.animation_data != None:
-            action = obj.animation_data.action
-        elif obj.data.shape_keys.animation_data != None:
-            action = obj.data.shape_keys.animation_data.action
-        else:
-            raise Exception("No animation/action data present on the active object!")
+        action = get_current_action(obj)
 
         frac = Fraction(action["Framerate"])
         context.scene.render.fps = frac.numerator
@@ -295,6 +300,141 @@ class CPJ_FaceFlagSelect(Operator):
 
         for f in bm.faces:
             if f[flags_layer] & flag_type != 0:
+                f.select = not self.deselect
+
+        # Show the updates in the viewport
+        # and recalculate n-gon tessellation.
+        bmesh.update_edit_mesh(me)
+
+        return {'FINISHED'}
+
+class CPJ_AnimFaceFlagAssign(Operator):
+    """Mark selected faces with active CPJ flag"""
+    bl_idname = "object.cpj_anim_face_mark_assign"
+    bl_label = "Mark selected with active CPJ flag"
+
+    def execute(self, context):
+        obj = context.object
+
+        if obj.type != 'MESH':
+            raise Exception("Must be a mesh object")
+        if bpy.context.object.mode != 'EDIT':
+            raise Exception("You must be in mesh edit mode to use this!")
+
+        me = obj.data
+        bm = bmesh.from_edit_mesh(me)
+
+        cur_frame = context.scene.frame_current
+        action = get_current_action(obj)
+        flag_data = None
+        event_name = None
+        for marker in action.pose_markers:
+            if marker.frame == cur_frame and marker.name.startswith("TFLG"):
+                flag_data = action[marker.name]
+                event_name = marker.name
+                break
+
+        if not flag_data:
+            num_pose_markers = len(action.pose_markers)
+            event_name = f"TFLG{num_pose_markers}"
+            pose_mark = action.pose_markers.new(event_name)
+            flag_data = "0"*len(bm.faces)
+
+        enum_items = context.scene.bl_rna.properties['cpj_flag_types'].enum_items
+        flag_type = int(context.scene.cpj_flag_types, 16)
+        flag_data_list = list(flag_data)
+        for i, f in enumerate(bm.faces):
+            if f.select:
+                #TODO seems a bit limited that the flags are encoded in ascii hex numbers....
+                enum_list_pos = enum_items[context.scene.cpj_flag_types].value + 1
+                print(enum_list_pos)
+                # Convert enum position to hex character
+                flag_data_list[i] = f"{enum_list_pos:0x}"
+ 
+        action[event_name] = "".join(flag_data_list)
+
+        return {'FINISHED'}
+
+class CPJ_AnimFaceFlagRemove(Operator):
+    """Remove active CPJ flag from selected faces"""
+    bl_idname = "object.cpj_anim_face_mark_remove"
+    bl_label = "Remove active cpj flag from faces"
+
+    def execute(self, context):
+        obj = context.object
+
+        if obj.type != 'MESH':
+            raise Exception("Must be a mesh object")
+        if bpy.context.object.mode != 'EDIT':
+            raise Exception("You must be in mesh edit mode to use this!")
+
+        me = obj.data
+        bm = bmesh.from_edit_mesh(me)
+
+        cur_frame = context.scene.frame_current
+        action = get_current_action(obj)
+        flag_data = None
+        event_name = None
+        for marker in action.pose_markers:
+            if marker.frame == cur_frame and marker.name.startswith("TFLG"):
+                flag_data = action[marker.name]
+                event_name = marker.name
+                break
+
+        if not flag_data:
+            raise Exception("No animated triangle flag data on the current frame!")
+
+        flag_data_list = list(flag_data)
+        for i, f in enumerate(bm.faces):
+            if f.select:
+                #TODO seems a bit limited that the flags are encoded in ascii hex numbers....
+                # Seems like we can only zero to clear stuff here...
+                flag_data_list[i] = "0"
+
+        action[event_name] = "".join(flag_data_list)
+
+        return {'FINISHED'}
+
+class CPJ_AnimFaceFlagSelect(Operator):
+    """Select faces with active cpj flag"""
+    bl_idname = "object.cpj_anim_face_mark_select"
+    bl_label = "Select all faces with active cpj flag"
+
+    deselect: BoolProperty()
+
+    def execute(self, context):
+        obj = context.object
+
+        if obj.type != 'MESH':
+            raise Exception("Must be a mesh object")
+        if bpy.context.object.mode != 'EDIT':
+            raise Exception("You must be in mesh edit mode to use this!")
+
+        me = obj.data
+        bm = bmesh.from_edit_mesh(me)
+
+        cur_frame = context.scene.frame_current
+        action = get_current_action(obj)
+        flag_data = None
+        for marker in action.pose_markers:
+            if marker.frame == cur_frame and marker.name.startswith("TFLG"):
+                flag_data = action[marker.name]
+                break
+
+        if not flag_data:
+            raise Exception("No animated triangle flag data on the current frame!")
+
+        enum_items = context.scene.bl_rna.properties['cpj_flag_types'].enum_items
+        flag_type = int(context.scene.cpj_flag_types, 16)
+        for i, f in enumerate(bm.faces):
+            #TODO seems a bit limited that the flags are encoded in ascii hex numbers....
+            enum_slot = int(flag_data[i], 16) - 1
+            if enum_slot < 0:
+                continue
+            # Get flag type.
+            anim_flag = int(enum_items[enum_slot].identifier, 16)
+
+            if anim_flag & flag_type != 0:
                 f.select = not self.deselect
 
         # Show the updates in the viewport
@@ -587,6 +727,26 @@ class EDIT_PT_Vpanel(bpy.types.Panel):
         row.operator(CPJ_FRMGroupIndexAssign.bl_idname, text="Assign")
         row.prop(context.scene, "cpj_frm_group_index", text="")
 
+class DOPE_PT_Vpanel(bpy.types.Panel):
+    bl_label = "Vertex attributes"
+    bl_category = "CPJ Utils"
+    bl_space_type = "DOPESHEET_EDITOR"
+    bl_region_type = "UI"
+    bl_context = "mesh_edit"
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.label(text="Animated Face Flags:")
+        layout.prop(context.scene, "cpj_flag_types", text="")
+
+        row = layout.row(align=True)
+        row.operator(CPJ_AnimFaceFlagAssign.bl_idname, text="Assign")
+        row.operator(CPJ_AnimFaceFlagRemove.bl_idname, text="Remove")
+        row = layout.row(align=True)
+        row.operator(CPJ_AnimFaceFlagSelect.bl_idname, text="Select").deselect = False
+        row.operator(CPJ_AnimFaceFlagSelect.bl_idname, text="Deselect").deselect = True
+
 # ----------------------------------------------------------------------------
 classes = {
     ImportCPJ,
@@ -595,12 +755,16 @@ classes = {
     POSE_PT_panel,
     EDIT_PT_Fpanel,
     EDIT_PT_Vpanel,
+    DOPE_PT_Vpanel,
     CPJ_InitOperator,
     CPJ_ActionPlaybackOperator,
     CPJ_CleanPoseActionOperator,
     CPJ_FaceFlagAssign,
     CPJ_FaceFlagRemove,
     CPJ_FaceFlagSelect,
+    CPJ_AnimFaceFlagAssign,
+    CPJ_AnimFaceFlagRemove,
+    CPJ_AnimFaceFlagSelect,
     CPJ_SmoothGroupSelect,
     CPJ_SmoothGroupAssign,
     CPJ_AlphaSelect,
