@@ -312,6 +312,7 @@ class CPJ_AnimFaceFlagAssign(Operator):
     """Mark selected faces with active CPJ flag"""
     bl_idname = "object.cpj_anim_face_mark_assign"
     bl_label = "Mark selected with active CPJ flag"
+    bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         obj = context.object
@@ -338,6 +339,7 @@ class CPJ_AnimFaceFlagAssign(Operator):
             num_pose_markers = len(action.pose_markers)
             event_name = f"TFLG{num_pose_markers}"
             pose_mark = action.pose_markers.new(event_name)
+            pose_mark.frame = cur_frame
             flag_data = "0"*len(bm.faces)
 
         enum_items = context.scene.bl_rna.properties['cpj_flag_types'].enum_items
@@ -347,7 +349,6 @@ class CPJ_AnimFaceFlagAssign(Operator):
             if f.select:
                 #TODO seems a bit limited that the flags are encoded in ascii hex numbers....
                 enum_list_pos = enum_items[context.scene.cpj_flag_types].value + 1
-                print(enum_list_pos)
                 # Convert enum position to hex character
                 flag_data_list[i] = f"{enum_list_pos:0x}"
  
