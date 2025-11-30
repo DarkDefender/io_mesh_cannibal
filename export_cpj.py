@@ -782,7 +782,8 @@ def create_seq_data(obj, armature):
         bone_dict = dict()
         bone_count = 0
 
-        for fcu in action.fcurves:
+        fcurves = action.layers[0].strips[0].channelbag(action.slots[0]).fcurves
+        for fcu in fcurves:
 
             #print()
             #print(fcu.data_path, fcu.array_index)

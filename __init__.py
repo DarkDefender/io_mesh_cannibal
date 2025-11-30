@@ -168,7 +168,8 @@ class CPJ_CleanPoseActionOperator(Operator):
         deleted_channels = 0
 
         for action in bpy.data.actions:
-            for fcu in action.fcurves:
+            fcurves = action.layers[0].strips[0].channelbag(action.slots[0]).fcurves
+            for fcu in fcurves:
                 data_path = fcu.data_path
                 if data_path[:4] == "pose":
                     # data path will look something like this: pose.bones["Bone.006"].location
@@ -176,12 +177,12 @@ class CPJ_CleanPoseActionOperator(Operator):
                     key_type = data_path.split(".")[-1]
 
                     if key_type not in supported_key_types:
-                        action.fcurves.remove(fcu)
+                        fcurves.remove(fcu)
                         deleted_channels += 1
                 else:
                     # Shapekey action keyframes
                     if data_path != "eval_time":
-                        action.fcurves.remove(fcu)
+                        fcurves.remove(fcu)
                         deleted_channels += 1
 
         self.report({'INFO'}, "Deleted " + str(deleted_channels) + " unsupported action channels")
