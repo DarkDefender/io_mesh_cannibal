@@ -8,3 +8,5 @@ It will output the python files to the folder you are running the command from
 
 The compare_data.py is sanity check helper that can parse and compare two python data structures to each other.
 It is used to see if two loaded cpj files or chunks are the same or if they differ.
+
+The kaitaistruct.py file is from https://github.com/kaitai-io/kaitai_struct_python_runtime and is MIT licenced.
