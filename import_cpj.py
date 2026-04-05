@@ -747,12 +747,12 @@ def add_action_events(action, events):
         if event.event_type == "TRIG":
             # Event triggers
             pose_mark = action.pose_markers.new(event.param_str)
-            pose_mark.frame = round(action["Framerate"] * event.time)
+            pose_mark.frame = round(action.frame_end * event.time)
         elif event.event_type == "TFLG":
             # Event triangle flag manipulation
             event_name = f"TFLG{triflag_events}"
             pose_mark = action.pose_markers.new(event_name)
-            pose_mark.frame = round(action["Framerate"] * event.time)
+            pose_mark.frame = round(action.frame_end * event.time)
             action[event_name] = event.param_str 
             triflag_events = triflag_events + 1
         else:

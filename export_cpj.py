@@ -956,9 +956,9 @@ def create_seq_data(obj, armature):
             # Get all markers and convert them to TRIG events
             for marker in action.pose_markers:
                 if marker.name.startswith("TFLG"):
-                    event_data = ["TFLG", marker.frame / framerate, action[marker.name]]
+                    event_data = ["TFLG", marker.frame / action.frame_end, action[marker.name]]
                 else:
-                    event_data = ["TRIG", marker.frame / framerate, marker.name]
+                    event_data = ["TRIG", marker.frame / action.frame_end, marker.name]
                 events.append(event_data)
 
         seq_byte_list.append(create_seq_byte_array(action.name, framerate, frames, events, bone_info, bone_translate, bone_rotate, bone_scale))
