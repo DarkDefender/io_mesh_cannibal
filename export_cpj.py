@@ -386,7 +386,7 @@ def get_geo_mount_data(obj, bm):
             min_dist = float("inf")
 
             edge_corners = [v2.co,v1.co,v0.co]
-            for i, co in enumerate(edge_corners):
+            for i, _ in enumerate(edge_corners):
                 e_vec = edge_corners[(i+1) % 3] - edge_corners[i]
 
                 mount_vec = mount_loc - edge_corners[i]
@@ -398,11 +398,25 @@ def get_geo_mount_data(obj, bm):
 
                     loc_on_edge = mount_vec.dot(e_vec) / e_vec.dot(e_vec)
                     if loc_on_edge <= 0:
-                        bary_weights[i] = 1
-                        point_in_plane = edge_corners[i]
+                        if i == 0:
+                            # We can't have the point be exactly on the first vertex as it will break that axis computation later.
+                            # Shift the point away from the vertex a bit to compensate.
+                            bary_weights[0] = 0.9
+                            bary_weights[1] = 0.1
+                            point_in_plane = 0.9 * edge_corners[0] + 0.1 * edge_corners[1]
+                        else:
+                            bary_weights[i] = 1
+                            point_in_plane = edge_corners[i]
                     elif loc_on_edge >= 1:
-                        bary_weights[(i+1) % 3] = 1
-                        point_in_plane = edge_corners[(i+1) % 3]
+                        if i == 2:
+                            # We can't have the point be exactly on the first vertex as it will break that axis computation later.
+                            # Shift the point away from the vertex a bit to compensate.
+                            bary_weights[0] = 0.9
+                            bary_weights[1] = 0.1
+                            point_in_plane = 0.9 * edge_corners[0] + 0.1 * edge_corners[1]
+                        else:
+                            bary_weights[(i+1) % 3] = 1
+                            point_in_plane = edge_corners[(i+1) % 3]
                     else:
                         bary_weights[i] = 1 - loc_on_edge
                         bary_weights[(i+1) % 3] = loc_on_edge
