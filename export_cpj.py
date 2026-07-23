@@ -364,6 +364,12 @@ def get_geo_mount_data(obj, bm):
             raise Exception("Invalid geo mount in object '" + obj.name + "', not parented to a single triangle.")
         face = face_set.pop()
 
+        # The vertex order might be different in the parent_verticies than the actual winding of the triangle.
+        # Use the triangle winding order as that is what is in the Cannibal spec.
+        v0 = face.verts[0]
+        v1 = face.verts[1]
+        v2 = face.verts[2]
+
         # Convert mount location and axis into mesh local coordinates
         mount_mat = obj_mat_inv @ mount.matrix_world
         mount_loc = mount_mat.translation
